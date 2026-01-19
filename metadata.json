@@ -1,0 +1,8 @@
+{
+  "name": "Copy of Copy of Nova Core",
+  "description": "A gamified mission distribution system connecting freelancers (adventurers) with tasks (quests). Features an AI receptionist, mission tracking, and rank-based visibility.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
