@@ -3,6 +3,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Send, User as UserIcon, Phone, Video, MoreVertical, Paperclip, Smile } from 'lucide-react';
 import { Contact, ChatMessage } from '../types';
 import { Button, Input, Card } from './Shared';
+import { 
+  fetchPrivateMessagesFromSupabase, 
+  postPrivateMessageToSupabase, 
+  subscribeToPrivateMessages 
+} from '../services/chatService';
 
 interface DirectMessageWindowProps {
   contact: Contact;
@@ -43,30 +48,56 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Initialize with dummy history if empty
+  const currentUserId = 'currentUser'; // Current logged in user ID
+
+  // Load private messages from Supabase or fallback
   useEffect(() => {
-    // In a real app, this would fetch history from a DB
-    setMessages([
-      {
-        id: 'init-1',
-        sender: 'agent', // representing the contact
-        text: `Connected with ${contact.name}. Secure channel established.`,
-        timestamp: Date.now() - 100000
+    let unsubscribe: (() => void) | undefined;
+
+    const loadPrivateChat = async () => {
+      const remoteMsgs = await fetchPrivateMessagesFromSupabase(currentUserId, contact.id);
+      if (remoteMsgs && remoteMsgs.length > 0) {
+        setMessages(remoteMsgs);
+      } else {
+        // Initial fallback channel
+        setMessages([
+          {
+            id: 'init-1',
+            sender: 'agent', // representing the contact
+            text: `Connected with ${contact.name}. Secure channel established.`,
+            timestamp: Date.now() - 100000
+          }
+        ]);
       }
-    ]);
+
+      // Subscribe to real-time incoming private messages
+      unsubscribe = subscribeToPrivateMessages(currentUserId, contact.id, (newMsg) => {
+        setMessages(prev => {
+          if (prev.some(m => m.id === newMsg.id)) return prev;
+          return [...prev, newMsg];
+        });
+      });
+    };
+
+    loadPrivateChat();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [contact]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!inputText.trim()) return;
 
+    const textToSend = inputText.trim();
     const newMsg: ChatMessage = {
-      id: Date.now().toString(),
+      id: 'usr_' + Date.now().toString(),
       sender: 'user',
-      text: inputText,
+      text: textToSend,
       timestamp: Date.now()
     };
 
@@ -74,17 +105,24 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
     setInputText('');
     setIsTyping(true);
 
-    // Simulate reply delay
-    setTimeout(() => {
+    // Save to Supabase private chat table if configured
+    await postPrivateMessageToSupabase(currentUserId, 'Operative', contact.id, textToSend);
+
+    // Simulate reply delay from contact
+    setTimeout(async () => {
       const replyText = GET_AUTOMATED_REPLY(contact, newMsg.text);
       const replyMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
+        id: 'rep_' + (Date.now() + 1).toString(),
         sender: 'agent',
         text: replyText,
         timestamp: Date.now()
       };
+
       setMessages(prev => [...prev, replyMsg]);
       setIsTyping(false);
+
+      // Save automated reply to Supabase as well
+      await postPrivateMessageToSupabase(contact.id, contact.name, currentUserId, replyText);
     }, 1500 + Math.random() * 1000);
   };
 
