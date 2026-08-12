@@ -191,7 +191,7 @@ export const FriendsPanel: React.FC<FriendsPanelProps> = ({ user, onUpdate, onCh
                             <div className="relative transform transition-all duration-500 ease-out group-hover/avatar:scale-[1.15] group-hover/avatar:drop-shadow-xl active:scale-95">
                                 <div className={`p-1 bg-white dark:bg-slate-900 rounded-2xl ${contact.status === 'Online' ? 'shadow-lg shadow-green-500/20' : ''}`}>
                                     <img 
-                                        src={contact.avatarUrl} 
+                                        src={contact.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${contact.id}`} 
                                         alt={contact.name}
                                         className="w-24 h-24 rounded-xl object-cover bg-slate-100 dark:bg-slate-800"
                                     />

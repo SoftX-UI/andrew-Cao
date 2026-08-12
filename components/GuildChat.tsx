@@ -1,15 +1,24 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageSquare, X, Send, Bot, User as UserIcon, Loader2, Globe, MapPin, Filter, ChevronDown, Users, Coins, Clock } from 'lucide-react';
-import { ChatMessage } from '../types';
+import { MessageSquare, X, Send, Bot, User as UserIcon, Loader2, Globe, MapPin, Filter, ChevronDown, Users, Coins, Clock, Database } from 'lucide-react';
+import { ChatMessage, User } from '../types';
 import { sendMessageToGuild } from '../services/geminiService';
 import { Button, Input, Card } from './Shared';
+import { isSupabaseConfigured } from '../services/supabaseClient';
+import { 
+  getInitialChannelMessages, 
+  saveChannelMessagesToLocal, 
+  fetchChannelMessagesFromSupabase, 
+  postMessageToSupabase, 
+  subscribeToChannelMessages 
+} from '../services/chatService';
 
 type ChatChannel = 'reception' | 'local' | 'global' | 'trade';
 type FilterType = 'all' | 'user' | 'agent';
 
 interface GuildChatProps {
     cooldownDuration?: number; // In seconds
+    user?: User | null;
 }
 
 const MOCK_NAMES = [
@@ -36,7 +45,7 @@ const MOCK_TRADE_REPLIES = [
   "Auction ending soon for the Ancient Scroll!"
 ];
 
-export const GuildChat: React.FC<GuildChatProps> = ({ cooldownDuration = 30 }) => {
+export const GuildChat: React.FC<GuildChatProps> = ({ cooldownDuration = 30, user }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeChannel, setActiveChannel] = useState<ChatChannel>('reception');
   const [senderFilter, setSenderFilter] = useState<FilterType>('all');
@@ -93,6 +102,55 @@ export const GuildChat: React.FC<GuildChatProps> = ({ cooldownDuration = 30 }) =
     ]
   });
 
+  // Load from local storage or Supabase on mount/channel change
+  useEffect(() => {
+    // 1. Try local cache
+    const cached = getInitialChannelMessages(activeChannel);
+    if (cached.length > 0) {
+      setChannels(prev => ({
+        ...prev,
+        [activeChannel]: cached
+      }));
+    }
+
+    // 2. Fetch from Supabase if configured
+    if (isSupabaseConfigured) {
+      fetchChannelMessagesFromSupabase(activeChannel).then((remoteMsgs) => {
+        if (remoteMsgs && remoteMsgs.length > 0) {
+          setChannels(prev => ({
+            ...prev,
+            [activeChannel]: remoteMsgs
+          }));
+        }
+      });
+
+      // 3. Subscribe to real-time additions
+      const unsubscribe = subscribeToChannelMessages(activeChannel, (newMsg) => {
+        setChannels(prev => {
+          const currentList = prev[activeChannel] || [];
+          if (currentList.some(m => m.id === newMsg.id)) return prev;
+          const updated = [...currentList, newMsg];
+          saveChannelMessagesToLocal(activeChannel, updated);
+          return {
+            ...prev,
+            [activeChannel]: updated
+          };
+        });
+      });
+
+      return () => {
+        unsubscribe();
+      };
+    }
+  }, [activeChannel]);
+
+  // Persist locally whenever channels change
+  useEffect(() => {
+    Object.keys(channels).forEach(ch => {
+      saveChannelMessagesToLocal(ch, channels[ch as ChatChannel]);
+    });
+  }, [channels]);
+
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -142,72 +200,104 @@ export const GuildChat: React.FC<GuildChatProps> = ({ cooldownDuration = 30 }) =
       [activeChannel]: [...prev[activeChannel], userMsg]
     }));
     
+    // Post user message to Supabase
+    postMessageToSupabase(activeChannel, userMsg);
+    
     setInputText('');
     setIsTyping(true);
 
-    if (activeChannel === 'reception') {
-        // AI Logic for Reception
-        const aiMsgId = (Date.now() + 1).toString();
-        
-        // Add placeholder
-        setChannels(prev => ({
-            ...prev,
-            reception: [...prev.reception, {
-                id: aiMsgId,
-                sender: 'agent',
-                senderName: 'Lira (Receptionist)',
-                text: '',
-                timestamp: Date.now(),
-                isTyping: true
-            }]
-        }));
+    try {
+      if (activeChannel === 'reception') {
+          // AI Logic for Reception
+          const aiMsgId = (Date.now() + 1).toString();
+          
+          // Add placeholder AI message
+          setChannels(prev => ({
+              ...prev,
+              reception: [...prev.reception, {
+                  id: aiMsgId,
+                  sender: 'agent',
+                  senderName: 'Lira (Receptionist)',
+                  text: '...',
+                  timestamp: Date.now(),
+                  isTyping: true
+              }]
+          }));
 
-        const responseStream = await sendMessageToGuild(userMsg.text);
+          const history = channels.reception.slice(-8).map(msg => ({
+              role: msg.sender === 'user' ? 'user' as const : 'model' as const,
+              parts: [{ text: msg.text }]
+          }));
 
-        if (responseStream) {
-            let fullText = '';
-            for await (const chunk of responseStream) {
-                fullText += chunk;
-                setChannels(prev => ({
-                    ...prev,
-                    reception: prev.reception.map(msg => 
-                        msg.id === aiMsgId 
-                        ? { ...msg, text: fullText, isTyping: false } 
-                        : msg
-                    )
-                }));
-            }
-        } else {
-             setChannels(prev => ({
-                ...prev,
-                reception: prev.reception.map(msg => 
-                    msg.id === aiMsgId 
-                    ? { ...msg, text: "I apologize, the mana lines seem disrupted.", isTyping: false } 
-                    : msg
-                )
-             }));
-        }
-    } else {
-        // Mock Logic for Local/Global/Trade (Simulate other users)
-        setTimeout(() => {
-            const replyPool = activeChannel === 'trade' ? MOCK_TRADE_REPLIES : MOCK_ADVENTURER_REPLIES;
-            const randomReply = replyPool[Math.floor(Math.random() * replyPool.length)];
-            const randomName = MOCK_NAMES[Math.floor(Math.random() * MOCK_NAMES.length)];
-            
-            const otherUserMsg: ChatMessage = {
-                id: (Date.now() + 1).toString(),
-                sender: 'agent', // 'agent' here represents 'other user'
-                senderName: randomName,
-                text: randomReply,
-                timestamp: Date.now()
-            };
+          const userProfile = user ? {
+            name: user.name,
+            level: user.level,
+            rank: user.rank
+          } : undefined;
 
-            setChannels(prev => ({
-                ...prev,
-                [activeChannel]: [...prev[activeChannel], otherUserMsg]
-            }));
-            setIsTyping(false);
-        }, 2000);
+          const replyText = await sendMessageToGuild(userMsg.text, activeChannel, history, userProfile);
+
+          if (replyText) {
+              setChannels(prev => ({
+                  ...prev,
+                  reception: prev.reception.map(msg => 
+                      msg.id === aiMsgId 
+                      ? { ...msg, text: replyText, isTyping: false } 
+                      : msg
+                  )
+              }));
+              postMessageToSupabase(activeChannel, {
+                  id: aiMsgId,
+                  sender: 'agent',
+                  senderName: 'Lira (Receptionist)',
+                  text: replyText,
+                  timestamp: Date.now()
+              });
+          } else {
+              const fallbackText = "I apologize, the mana lines seem disrupted.";
+              setChannels(prev => ({
+                  ...prev,
+                  reception: prev.reception.map(msg => 
+                      msg.id === aiMsgId 
+                      ? { ...msg, text: fallbackText, isTyping: false } 
+                      : msg
+                  )
+              }));
+              postMessageToSupabase(activeChannel, {
+                  id: aiMsgId,
+                  sender: 'agent',
+                  senderName: 'Lira (Receptionist)',
+                  text: fallbackText,
+                  timestamp: Date.now()
+              });
+          }
+      } else {
+          // Mock Logic for Local/Global/Trade (Simulate other users)
+          setTimeout(() => {
+              const replyPool = activeChannel === 'trade' ? MOCK_TRADE_REPLIES : MOCK_ADVENTURER_REPLIES;
+              const randomReply = replyPool[Math.floor(Math.random() * replyPool.length)];
+              const randomName = MOCK_NAMES[Math.floor(Math.random() * MOCK_NAMES.length)];
+              
+              const otherUserMsg: ChatMessage = {
+                  id: (Date.now() + 1).toString(),
+                  sender: 'agent',
+                  senderName: randomName,
+                  text: randomReply,
+                  timestamp: Date.now()
+              };
+
+              setChannels(prev => ({
+                  ...prev,
+                  [activeChannel]: [...prev[activeChannel], otherUserMsg]
+              }));
+              postMessageToSupabase(activeChannel, otherUserMsg);
+              setIsTyping(false);
+          }, 1500);
+      }
+    } finally {
+      if (activeChannel === 'reception') {
+        setIsTyping(false);
+      }
     }
     
     if (activeChannel !== 'reception') {
@@ -270,6 +360,12 @@ export const GuildChat: React.FC<GuildChatProps> = ({ cooldownDuration = 30 }) =
                         <span className="font-bold text-sm">{CHANNEL_CONFIG[activeChannel].label}</span>
                         <ChevronDown size={14} className={`transition-transform ${showChannelMenu ? 'rotate-180' : ''}`} />
                     </button>
+
+                    {/* Supabase Connection Status Pill */}
+                    <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-black/20 text-white/90 border border-white/20 ml-2" title={isSupabaseConfigured ? "Supabase Live Database Connected" : "Local Database Mode (Add VITE_SUPABASE_URL in .env)"}>
+                      <Database size={10} className={isSupabaseConfigured ? "text-emerald-300" : "text-amber-300"} />
+                      <span>{isSupabaseConfigured ? "Supabase Live" : "Local Sync"}</span>
+                    </div>
 
                     {/* Channel Dropdown */}
                     {showChannelMenu && (

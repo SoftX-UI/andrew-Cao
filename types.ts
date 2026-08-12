@@ -222,3 +222,22 @@ export interface AdminLog {
   details?: string;
   timestamp: string;
 }
+
+export interface ChronicleEntry {
+  id: string;
+  title: string;
+  category: 'Personal Log' | 'Guild Saga' | 'Mission Debrief' | 'World Lore';
+  content: string;
+  authorId: string;
+  authorName: string;
+  authorRole: string;
+  timestamp: string;
+  tags: string[];
+  significance: 'Minor' | 'Notable' | 'Historic' | 'Legendary';
+  isBookmarked?: boolean;
+  relatedMissionId?: string;
+  likesCount?: number;
+  isAiGenerated?: boolean;
+  visibility: 'Public' | 'Guild Only' | 'Private';
+}
+

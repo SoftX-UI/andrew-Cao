@@ -1,5 +1,5 @@
 
-import { Mission, MissionStatus, MissionType, User, UserRole, NewsItem, MissionDifficulty, Ad, FeedbackItem, MailMessage } from './types';
+import { Mission, MissionStatus, MissionType, User, UserRole, NewsItem, MissionDifficulty, Ad, FeedbackItem, MailMessage, ChronicleEntry } from './types';
 
 export const CURRENT_USER: User = {
   id: 'u1',
@@ -532,3 +532,72 @@ export const MOCK_MISSIONS: Mission[] = [
     history: []
   }
 ];
+
+export const MOCK_CHRONICLES: ChronicleEntry[] = [
+  {
+    id: 'chron_1',
+    title: 'The Great Convergence of Sector 7',
+    category: 'Guild Saga',
+    content: 'On the 14th cycle of the Nova Epoch, a massive etherium anomaly breached the defenses of Sector 7. Over thirty guild agents responded to the high-priority beacon. Through coordinated efforts between the Vanguard Corps and Tech Security, the singularity was successfully stabilized before sub-space collapse occurred.',
+    authorId: 'admin_01',
+    authorName: 'Grand Master Solon',
+    authorRole: 'Guild Administrator',
+    timestamp: new Date(Date.now() - 86400000 * 5).toISOString(),
+    tags: ['Anomaly', 'Sector7', 'Saga', 'Etherium'],
+    significance: 'Legendary',
+    isBookmarked: true,
+    likesCount: 42,
+    isAiGenerated: false,
+    visibility: 'Public'
+  },
+  {
+    id: 'chron_2',
+    title: 'Debrief: Operation Frostpeak Relay',
+    category: 'Mission Debrief',
+    content: 'Field operatives successfully delivered the encrypted communications payload across the icy expanse of Frostpeaks. Environmental hazards included severe sub-zero blizzards and localized magnetic interference. Recommendation for future deployments: equip thermal-insulated exosuits.',
+    authorId: 'u1',
+    authorName: 'Adventurer Alex',
+    authorRole: 'Student',
+    timestamp: new Date(Date.now() - 86400000 * 2).toISOString(),
+    tags: ['Frostpeaks', 'Relay', 'Debrief', 'Logistics'],
+    significance: 'Notable',
+    relatedMissionId: 'm1',
+    isBookmarked: false,
+    likesCount: 18,
+    isAiGenerated: false,
+    visibility: 'Public'
+  },
+  {
+    id: 'chron_3',
+    title: 'Chronicle of the First Foundation Era',
+    category: 'World Lore',
+    content: 'Long before the Nexus Nova Core was established, early pioneers harnessed raw etherium crystals to forge the initial network relays. These sacred artifacts still power the core nodes across central guild halls today.',
+    authorId: 'prof_oak',
+    authorName: 'Prof. Oak',
+    authorRole: 'Professor',
+    timestamp: new Date(Date.now() - 86400000 * 10).toISOString(),
+    tags: ['History', 'Lore', 'Etherium', 'Pioneers'],
+    significance: 'Historic',
+    isBookmarked: true,
+    likesCount: 29,
+    isAiGenerated: true,
+    visibility: 'Public'
+  },
+  {
+    id: 'chron_4',
+    title: 'Personal Journal: Breakthrough in Quantum Encryption',
+    category: 'Personal Log',
+    content: 'After weeks of analyzing raw packet telemetry from recent cyber security missions, I managed to synthesize a novel encryption algorithm that bypasses rogue scanner sweeps. Recorded for future research and guild archive reference.',
+    authorId: 'u1',
+    authorName: 'Adventurer Alex',
+    authorRole: 'Student',
+    timestamp: new Date(Date.now() - 86400000 * 1).toISOString(),
+    tags: ['Research', 'Encryption', 'Personal', 'CyberSec'],
+    significance: 'Minor',
+    isBookmarked: false,
+    likesCount: 7,
+    isAiGenerated: false,
+    visibility: 'Guild Only'
+  }
+];
+

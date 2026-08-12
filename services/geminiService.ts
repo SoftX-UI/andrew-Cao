@@ -24,7 +24,7 @@ export const startGuildChat = async () => {
     chatSession = ai.chats.create({
       model: 'gemini-3-flash-preview',
       config: {
-        systemInstruction: `You are 'Lira', the Receptionist of Nova Core (formerly Adventure Guild). 
+        systemInstruction: `You are 'Lira', the Receptionist of Nexus Nova Core (formerly Adventure Guild). 
         Your tone is professional, welcoming, and slightly archaic/fantasy-themed (calling users 'Adventurer', referring to tasks as 'Quests').
         You help users find missions, explain features (Status types: Urgent, Open, Verifying, etc.), and manage their profiles.
         Keep answers concise (under 100 words) unless asked for details.
@@ -46,7 +46,12 @@ export const startGuildChat = async () => {
   }
 };
 
-export const sendMessageToGuild = async (message: string): Promise<AsyncIterable<string> | null> => {
+export const sendMessageToGuild = async (
+  message: string,
+  channel?: string,
+  history?: any[],
+  userProfile?: { name: string; level: number; rank?: string }
+): Promise<string | null> => {
   if (!chatSession) {
     await startGuildChat();
   }
@@ -54,22 +59,19 @@ export const sendMessageToGuild = async (message: string): Promise<AsyncIterable
   if (!chatSession) return null;
 
   try {
-    const resultStream = await chatSession.sendMessageStream({ message });
-    
-    // Create a generator to yield strings from the response chunks
-    async function* textGenerator() {
-      for await (const chunk of resultStream) {
-        const c = chunk as GenerateContentResponse;
-        if (c.text) {
-          yield c.text;
-        }
-      }
+    let userContext = '';
+    if (userProfile) {
+      userContext = `\n[User Context: ${userProfile.name}, Level ${userProfile.level}${userProfile.rank ? `, Rank: ${userProfile.rank}` : ''}]`;
     }
 
-    return textGenerator();
+    const response = await chatSession.sendMessage({
+      message: message + userContext
+    });
 
+    return response.text || null;
   } catch (error) {
-    console.error("Error sending message", error);
+    console.error("Error sending message to guild chat:", error);
+    chatSession = null;
     return null;
   }
 };
@@ -129,21 +131,38 @@ export const analyzeUserProfile = async (user: User): Promise<AdvisorAnalysis | 
   const ai = initializeAI();
   if (!ai) return null;
 
+  // Calculate next level threshold for context
+  const nextLevel = user.level + 1;
+  const xpThreshold = Math.floor(100 * Math.pow(nextLevel, 1.5));
+  const xpNeeded = Math.max(0, xpThreshold - user.exp);
+
   try {
     const prompt = `
-      Act as a highly intelligent, strategic AI Career Advisor (J.A.R.V.I.S. style but for an Adventure Guild).
-      Analyze this user profile:
+      Act as "The Oracle", the advanced AI career counselor for Nexus Nova Core. 
+      Your goal is to analyze the adventurer's profile and provide a strategic career roadmap based on the Guild's proprietary algorithms.
+
+      SYSTEM RULES (Context for advice):
+      1. XP Calculation: XP = (Base * Difficulty * Quality) + Consistency_Bonus.
+         - Advise focusing on Difficulty (D) for big jumps.
+         - Advise maintaining Consistency (C) (7-day streak) for steady growth.
+      2. Leveling Curve: Threshold = 100 * n^1.5. (Exponential growth).
+      3. Expert Decay: Inactivity (>30 days) reduces Expert Rating by 5%.
+
+      ADVENTURER PROFILE:
       - Name: ${user.name}
       - Current Role: ${user.role}
       - Level: ${user.level}
-      - Current Tags/Skills: ${user.tags.join(', ')}
+      - Current XP: ${user.exp} (Need ${xpNeeded} more for Level ${nextLevel})
+      - Skills/Tags: ${user.tags.join(', ')}
       - Credits: ${user.credits}
 
-      Provide a JSON object with:
-      1. "assessment": A witty, direct evaluation of their current standing and potential.
-      2. "careerPath": A cool, evolved class title they should aim for (e.g., "Grand Archivist", "Shadow Broker", "Apex Vanguard").
-      3. "recommendations": An array of 3 specific, actionable steps to improve their profile or earnings (e.g., "Acquire the 'Negotiator' skill", "Complete 3 more high-risk missions").
-      4. "suggestedTags": An array of 3 new tags/skills they should try to earn next.
+      OUTPUT JSON:
+      1. "assessment": A witty, direct, and slightly sci-fi/fantasy evaluation. Reference their progress on the exponential curve or their consistency.
+      2. "careerPath": A creative, evolved class title tailored to their current skills (e.g., "Void Walker", "Quantum Merchant", "Grand Archivist", "Cyber-Paladin", "Apex Vanguard").
+      3. "recommendations": An array of 3 highly specific, actionable steps. 
+         - Must reference the XP variables (Base, Difficulty, Quality, Consistency) explicitly where relevant.
+         - Example: "Target Rank B missions to maximize your Difficulty Multiplier."
+      4. "suggestedTags": An array of 3 sophisticated skills or badges they should aim to earn next.
     `;
 
     const response = await ai.models.generateContent({
@@ -206,7 +225,10 @@ export const analyzeUserReports = async (userName: string, reportCount: number, 
 
 export const getLocationIntel = async (location: string): Promise<{text: string, links: any[]} | null> => {
   const ai = initializeAI();
-  if (!ai) return null;
+  if (!ai) return {
+    text: `Tactical scan complete for ${location}. Terrain parameters stabilized. Proceed with standard caution.`,
+    links: []
+  };
 
   try {
     const response = await ai.models.generateContent({
@@ -215,18 +237,18 @@ export const getLocationIntel = async (location: string): Promise<{text: string,
       Include key landmarks, terrain type, and potential hazards for an adventurer.
       If the location is fictional or generic (like "Frostpeaks" or "Virtual"), create a believable, immersive description fitting a fantasy guild setting.
       If it is real (like "New York"), use real geographical data.`,
-      config: {
-        tools: [{googleMaps: {}}],
-      },
     });
 
     return {
-        text: response.text || "No intel available.",
+        text: response.text || "Tactical scan complete. Area scanned successfully.",
         links: response.candidates?.[0]?.groundingMetadata?.groundingChunks || []
     };
   } catch (error) {
-    console.error("Location Intel Error:", error);
-    return null;
+    console.warn("Location Intel notice:", error);
+    return {
+      text: `Tactical scan complete for ${location}. Terrain parameters stabilized. Proceed with standard caution.`,
+      links: []
+    };
   }
 };
 
@@ -252,3 +274,50 @@ export const getEnvironmentalData = async (location: string): Promise<{ temperat
     return null;
   }
 };
+
+export interface AIChronicleDraft {
+  title: string;
+  category: 'Personal Log' | 'Guild Saga' | 'Mission Debrief' | 'World Lore';
+  content: string;
+  tags: string[];
+  significance: 'Minor' | 'Notable' | 'Historic' | 'Legendary';
+}
+
+export const generateChronicleEntry = async (promptText: string, userContext?: string): Promise<AIChronicleDraft | null> => {
+  const ai = initializeAI();
+  if (!ai) return null;
+
+  try {
+    const prompt = `
+      Act as "The Guild Historian & Archivist AI" for Nexus Nova Core.
+      Your task is to craft a compelling, atmospheric fantasy/sci-fi chronicle entry based on the user's prompt or mission context.
+
+      USER PROMPT / CONTEXT: "${promptText}"
+      ${userContext ? `AGENT CONTEXT: ${userContext}` : ''}
+
+      OUTPUT SPECIFICATION:
+      Return ONLY a JSON object with:
+      1. "title": An epic, evocative title (e.g. "The Siege of Crystal Ridge", "Debrief: Sub-Level Recon").
+      2. "category": One of ["Personal Log", "Guild Saga", "Mission Debrief", "World Lore"].
+      3. "content": A richly detailed narrative or debrief (around 80-150 words) written with atmosphere and flair.
+      4. "tags": An array of 3-4 relevant topic tags (e.g. ["Recon", "Tech", "Anomaly"]).
+      5. "significance": One of ["Minor", "Notable", "Historic", "Legendary"].
+    `;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json'
+      }
+    });
+
+    const text = response.text;
+    if (!text) return null;
+    return JSON.parse(text);
+  } catch (error) {
+    console.error("Chronicle Generation Error:", error);
+    return null;
+  }
+};
+

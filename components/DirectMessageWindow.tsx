@@ -94,7 +94,7 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
       <div className="p-3 bg-white border-b border-slate-100 flex justify-between items-center dark:bg-slate-900 dark:border-slate-800">
         <div className="flex items-center gap-3">
           <div className="relative">
-             <img src={contact.avatarUrl} alt={contact.name} className="w-10 h-10 rounded-full border border-slate-200 bg-slate-100 object-cover" />
+             <img src={contact.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${contact.id}`} alt={contact.name} className="w-10 h-10 rounded-full border border-slate-200 bg-slate-100 object-cover" />
              <div className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-900 ${
                 contact.status === 'Online' ? 'bg-green-500' : 'bg-slate-400'
              }`}></div>
@@ -125,7 +125,7 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
             className={`flex gap-2 ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}
           >
             <img 
-               src={msg.sender === 'user' ? currentUserAvatar : contact.avatarUrl} 
+               src={(msg.sender === 'user' ? currentUserAvatar : contact.avatarUrl) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${msg.sender}`} 
                className="w-6 h-6 rounded-full self-end mb-1 object-cover"
                alt="Avatar"
             />
@@ -141,7 +141,7 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
         
         {isTyping && (
            <div className="flex gap-2">
-              <img src={contact.avatarUrl} className="w-6 h-6 rounded-full self-end mb-1 object-cover" alt="Avatar" />
+              <img src={contact.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${contact.id}`} className="w-6 h-6 rounded-full self-end mb-1 object-cover" alt="Avatar" />
               <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-none px-3 py-2 shadow-sm dark:bg-slate-900 dark:border-slate-800">
                  <div className="flex gap-1">
                     <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></span>

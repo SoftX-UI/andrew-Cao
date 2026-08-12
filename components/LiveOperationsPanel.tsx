@@ -520,7 +520,7 @@ export const LiveOperationsPanel: React.FC<LiveOperationsPanelProps> = ({
                                             log.type === 'success' ? 'text-emerald-400' : 
                                             'text-slate-300'
                                         }`}>
-                                            {log.type === 'alert' && <span className="bg-red-950/50 text-red-500 px-1 mr-1">> ALERT:</span>}
+                                            {log.type === 'alert' && <span className="bg-red-950/50 text-red-500 px-1 mr-1">&gt; ALERT:</span>}
                                             {log.text}
                                         </span>
                                     </div>

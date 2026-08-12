@@ -5,7 +5,7 @@ import { Card, Button, Badge, Input } from './Shared';
 import { 
   Mail, Phone, MapPin, Shield, Edit2, Save, X, User as UserIcon, 
   Lock, Users, BrainCircuit, Loader2, Camera, CheckCircle2, 
-  GraduationCap, Crown, Briefcase, Trees, Trophy, Coins
+  GraduationCap, Crown, Briefcase, Trees, Trophy, Coins, TrendingUp
 } from 'lucide-react';
 import { analyzeUserProfile, AdvisorAnalysis } from '../services/geminiService';
 
@@ -30,6 +30,11 @@ export const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdate, onChat
   const [showAdvisor, setShowAdvisor] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<AdvisorAnalysis | null>(null);
+
+  // Level Logic: L_total(n) = 100 * n^1.5
+  const nextLevel = user.level + 1;
+  const xpThreshold = Math.floor(100 * Math.pow(nextLevel, 1.5));
+  const progressPercent = Math.min(100, Math.floor((user.exp / xpThreshold) * 100));
 
   const getRoleIcon = (role: string) => {
     switch(role) {
@@ -101,9 +106,9 @@ export const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdate, onChat
                        <Button 
                            variant="secondary" 
                            onClick={() => setShowAdvisor(!showAdvisor)}
-                           className={`!px-3 !py-1.5 !text-xs gap-2 ${showAdvisor ? 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-800' : ''}`}
+                           className={`!px-3 !py-1.5 !text-xs gap-2 transition-all duration-300 ${showAdvisor ? 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700 shadow-lg shadow-purple-500/20' : 'hover:border-purple-300 hover:text-purple-600'}`}
                        >
-                           <BrainCircuit size={14} /> AI Career Advisor
+                           <BrainCircuit size={14} /> AI Career Oracle
                        </Button>
                        {isEditing ? (
                            <>
@@ -122,64 +127,77 @@ export const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdate, onChat
 
                {/* AI Advisor Panel */}
                {showAdvisor && (
-                   <div className="mb-6 p-6 bg-purple-50 dark:bg-purple-900/10 rounded-2xl border border-purple-100 dark:border-purple-900/50 animate-in slide-in-from-top-2">
-                       <div className="flex justify-between items-start mb-4">
+                   <div className="mb-6 p-6 bg-gradient-to-br from-slate-50 to-purple-50 dark:from-slate-900 dark:to-purple-900/20 rounded-2xl border border-purple-100 dark:border-purple-900/50 animate-in slide-in-from-top-2 relative overflow-hidden">
+                       <div className="absolute top-0 right-0 p-8 opacity-5">
+                           <BrainCircuit size={120} />
+                       </div>
+                       <div className="flex justify-between items-start mb-6 relative z-10">
                            <div>
-                               <h3 className="text-lg font-bold text-purple-900 dark:text-purple-300 flex items-center gap-2">
-                                   <BrainCircuit size={20} /> J.A.R.V.I.S. Career Protocol
+                               <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                                   <BrainCircuit size={20} className="text-purple-600 dark:text-purple-400" /> N.O.V.A. Oracle Protocol
                                </h3>
-                               <p className="text-sm text-purple-700 dark:text-purple-400">Strategic analysis of your adventurer profile.</p>
+                               <p className="text-sm text-slate-500 dark:text-slate-400">Strategic career path analysis based on guild metrics.</p>
                            </div>
                            {!analysis && (
-                               <Button onClick={handleAnalyze} disabled={isAnalyzing} className="bg-purple-600 text-white hover:bg-purple-700">
-                                   {isAnalyzing ? <Loader2 size={16} className="animate-spin" /> : 'Run Analysis'}
+                               <Button onClick={handleAnalyze} disabled={isAnalyzing} className="bg-purple-600 text-white hover:bg-purple-700 shadow-md">
+                                   {isAnalyzing ? <Loader2 size={16} className="animate-spin mr-2" /> : <SparklesIcon />}
+                                   {isAnalyzing ? 'Processing...' : 'Run Analysis'}
                                </Button>
                            )}
                        </div>
 
                        {analysis ? (
-                           <div className="space-y-4">
+                           <div className="space-y-6 relative z-10 animate-in fade-in slide-in-from-bottom-2">
                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                   <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-purple-100 dark:border-purple-900/30">
-                                       <p className="text-xs font-bold text-slate-400 uppercase mb-2">Assessment</p>
-                                       <p className="text-sm text-slate-700 dark:text-slate-300 italic">"{analysis.assessment}"</p>
+                                   <div className="bg-white/80 dark:bg-slate-950/50 p-5 rounded-xl border border-purple-100 dark:border-purple-900/30 shadow-sm backdrop-blur-sm">
+                                       <p className="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-2">Current Assessment</p>
+                                       <p className="text-sm text-slate-700 dark:text-slate-200 italic leading-relaxed">"{analysis.assessment}"</p>
                                    </div>
-                                   <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-purple-100 dark:border-purple-900/30">
-                                       <p className="text-xs font-bold text-slate-400 uppercase mb-2">Recommended Path</p>
-                                       <div className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600 dark:from-purple-400 dark:to-indigo-400">
+                                   <div className="bg-gradient-to-br from-indigo-600 to-purple-700 p-5 rounded-xl border border-transparent shadow-lg text-white flex flex-col justify-center items-center text-center">
+                                       <p className="text-[10px] font-bold text-indigo-200 uppercase tracking-widest mb-1">Projected Class</p>
+                                       <div className="text-2xl font-bold tracking-tight">
                                            {analysis.careerPath}
+                                       </div>
+                                       <div className="mt-2 h-1 w-16 bg-white/30 rounded-full"></div>
+                                   </div>
+                               </div>
+                               
+                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                   <div className="md:col-span-2">
+                                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Strategic Directives</p>
+                                       <div className="space-y-2">
+                                           {analysis.recommendations.map((rec, i) => (
+                                               <div key={i} className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-300 bg-white/60 dark:bg-slate-900/40 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                                                   <div className="mt-0.5 bg-green-100 text-green-600 p-1 rounded-full dark:bg-green-900/30">
+                                                       <TrendingUp size={14} />
+                                                   </div>
+                                                   <span>{rec}</span>
+                                               </div>
+                                           ))}
+                                       </div>
+                                   </div>
+                                   <div>
+                                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Recommended Tags</p>
+                                       <div className="flex flex-col gap-2">
+                                           {analysis.suggestedTags.map(tag => (
+                                               <div key={tag} className="px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-xs font-medium border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 flex items-center gap-2">
+                                                   <div className="w-1.5 h-1.5 rounded-full bg-purple-500"></div>
+                                                   {tag}
+                                               </div>
+                                           ))}
                                        </div>
                                    </div>
                                </div>
-                               <div>
-                                   <p className="text-xs font-bold text-slate-400 uppercase mb-2">Action Items</p>
-                                   <ul className="space-y-2">
-                                       {analysis.recommendations.map((rec, i) => (
-                                           <li key={i} className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 p-2 rounded-lg border border-purple-50 dark:border-purple-900/20">
-                                               <CheckCircle2 size={16} className="text-green-500 shrink-0 mt-0.5" />
-                                               {rec}
-                                           </li>
-                                       ))}
-                                   </ul>
-                               </div>
-                               <div>
-                                   <p className="text-xs font-bold text-slate-400 uppercase mb-2">Suggested Skills</p>
-                                   <div className="flex gap-2">
-                                       {analysis.suggestedTags.map(tag => (
-                                           <Badge key={tag} className="bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800">
-                                               + {tag}
-                                           </Badge>
-                                       ))}
-                                   </div>
-                               </div>
-                               <div className="flex justify-end">
-                                   <Button variant="ghost" onClick={() => setAnalysis(null)} className="text-xs text-slate-400 hover:text-purple-600">Reset Analysis</Button>
+                               
+                               <div className="flex justify-end pt-2 border-t border-purple-100 dark:border-purple-900/30">
+                                   <Button variant="ghost" onClick={() => setAnalysis(null)} className="text-xs text-slate-400 hover:text-purple-600">
+                                       Reset Oracle
+                                   </Button>
                                </div>
                            </div>
                        ) : isAnalyzing && (
-                           <div className="text-center py-8">
-                               <Loader2 size={32} className="animate-spin mx-auto text-purple-500 mb-2" />
-                               <p className="text-sm text-purple-700 dark:text-purple-300">Crunching guild data...</p>
+                           <div className="text-center py-12">
+                               <p className="text-sm text-slate-500 dark:text-slate-400 animate-pulse">Calculating optimal trajectory...</p>
                            </div>
                        )}
                    </div>
@@ -251,11 +269,15 @@ export const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdate, onChat
                        <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
                            <div className="flex justify-between items-center mb-2">
                                <span className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase">Level {user.level}</span>
-                               <span className="text-xs text-indigo-600 dark:text-indigo-400 font-mono">{user.exp} / {user.level * 1000} XP</span>
+                               <span className="text-xs text-indigo-600 dark:text-indigo-400 font-mono">{user.exp} / {xpThreshold} XP</span>
                            </div>
-                           <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                               <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 w-[45%]"></div>
+                           <div className="relative h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                               <div 
+                                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-1000 ease-out" 
+                                  style={{ width: `${progressPercent}%` }}
+                               ></div>
                            </div>
+                           <p className="text-[10px] text-right text-slate-400 mt-1">Next Level in {xpThreshold - user.exp} XP</p>
                        </div>
 
                        <div className="grid grid-cols-2 gap-3">
@@ -328,3 +350,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdate, onChat
     </div>
   );
 };
+
+const SparklesIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z"/></svg>
+);

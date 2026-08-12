@@ -25,9 +25,9 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({ onClose }) => {
         return (
           <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
             <div className="bg-guild-50 p-4 rounded-xl border border-guild-100 dark:bg-guild-900/20 dark:border-guild-800">
-              <h3 className="font-bold text-guild-800 dark:text-guild-200 text-lg mb-2">Welcome to Nova Core</h3>
+              <h3 className="font-bold text-guild-800 dark:text-guild-200 text-lg mb-2">Welcome to Nexus Nova Core</h3>
               <p className="text-sm text-guild-700 dark:text-guild-300 leading-relaxed">
-                Nova Core is the central operating system for the modern Adventurer's Guild. We connect skilled freelancers (Adventurers) with clients (Issuers) through a gamified mission distribution network.
+                Nexus Nova Core is the central operating system for the modern Adventurer's Guild. We connect skilled freelancers (Adventurers) with clients (Issuers) through a gamified mission distribution network.
               </p>
             </div>
 
@@ -180,7 +180,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({ onClose }) => {
                 ))}
              </nav>
              <div className="p-4 border-t border-slate-200 dark:border-slate-800 text-center">
-                <p className="text-[10px] text-slate-400">Nova Core v2.5</p>
+                <p className="text-[10px] text-slate-400">Nexus Nova Core v2.5</p>
              </div>
           </div>
 

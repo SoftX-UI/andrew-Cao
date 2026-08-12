@@ -100,7 +100,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ availableUsers, onLogin, onR
                 <div className="relative z-10">
                     <div className="flex items-center gap-3 mb-6">
                         <Shield size={32} className="text-amber-400 fill-amber-500/20" />
-                        <h1 className="text-3xl font-bold tracking-tight">Nova Core</h1>
+                        <h1 className="text-3xl font-bold tracking-tight">Nexus Nova Core</h1>
                     </div>
                     <p className="text-indigo-100 mb-8 max-w-sm">
                         The central operating system for the modern Adventurer's Guild. Accept quests, track bounties, and build your legend.
@@ -254,7 +254,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ availableUsers, onLogin, onR
         </Card>
         
         <div className="absolute bottom-4 text-slate-500 text-xs text-center w-full opacity-50">
-            Nova Core v2.5 • Authorized Access Only
+            Nexus Nova Core v2.5 • Authorized Access Only
         </div>
     </div>
   );

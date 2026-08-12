@@ -43,7 +43,7 @@ export const MissionCard: React.FC<MissionCardProps> = ({
 
   const timeLeft = calculateTimeLeft();
   const issuerName = ISSUERS[mission.issuerId] || 'Unknown Client';
-  const isAssignee = user.id === mission.assigneeId;
+  const isAssignee = user?.id === mission.assigneeId;
 
   return (
     <Card 
@@ -144,7 +144,7 @@ export const MissionCard: React.FC<MissionCardProps> = ({
          </div>
          
          <div className="flex gap-2">
-            {mission.status === MissionStatus.Open && onQuickAccept && !isAssignee && user.id !== mission.issuerId && (
+            {mission.status === MissionStatus.Open && onQuickAccept && !isAssignee && user?.id !== mission.issuerId && (
                 <Button 
                     variant="ghost" 
                     className="!p-2 text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/20"

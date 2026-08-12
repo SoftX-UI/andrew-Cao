@@ -2,11 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Layout, Radio, Users, Settings, Plus, Bell, Sun, Moon, 
-  Menu, X, Shield, LogOut, Inbox, Info, AlertCircle, Briefcase, User as UserIcon
+  Menu, X, Shield, LogOut, Inbox, Info, AlertCircle, Briefcase, User as UserIcon, BookOpen
 } from 'lucide-react';
 
-import { User, Mission, MissionStatus, Ad, FeedbackItem, UserRole, DeviceType, AdminLog } from './types';
-import { MOCK_MISSIONS, MOCK_ADS, MOCK_NEWS, MOCK_FEEDBACKS, MOCK_MAIL, PRESET_USERS } from './constants';
+import { User, Mission, MissionStatus, Ad, FeedbackItem, UserRole, DeviceType, AdminLog, ChronicleEntry } from './types';
+import { CURRENT_USER, MOCK_MISSIONS, MOCK_ADS, MOCK_NEWS, MOCK_FEEDBACKS, MOCK_MAIL, PRESET_USERS, MOCK_CHRONICLES } from './constants';
 
 import { Button, Badge } from './components/Shared';
 import { MissionBoard } from './components/MissionBoard';
@@ -19,6 +19,7 @@ import { GuildChat } from './components/GuildChat';
 import { NewsFeed } from './components/NewsFeed';
 import { FriendsPanel } from './components/FriendsPanel';
 import { MailboxPanel } from './components/MailboxPanel';
+import { ChroniclePanel } from './components/ChroniclePanel';
 import { MissionDetailsModal } from './components/MissionDetailsModal';
 import { ProfileModal } from './components/ProfileModal';
 import { DirectMessageWindow } from './components/DirectMessageWindow';
@@ -33,7 +34,7 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   
   // Auth & User State
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(CURRENT_USER);
   const [availableUsers, setAvailableUsers] = useState<User[]>(PRESET_USERS);
 
   const [missions, setMissions] = useState<Mission[]>(MOCK_MISSIONS);
@@ -41,6 +42,7 @@ export default function App() {
   const [feedbacks, setFeedbacks] = useState<FeedbackItem[]>(MOCK_FEEDBACKS);
   const [adminLogs, setAdminLogs] = useState<AdminLog[]>([]);
   const [mail, setMail] = useState(MOCK_MAIL);
+  const [chronicles, setChronicles] = useState<ChronicleEntry[]>(MOCK_CHRONICLES);
   
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
   const [customStatusColors, setCustomStatusColors] = useState<Record<string, string>>({});
@@ -48,6 +50,29 @@ export default function App() {
   
   const [activeChatContactId, setActiveChatContactId] = useState<string | null>(null);
   const [chatCooldown, setChatCooldown] = useState(30);
+
+  // Chronicle Handlers
+  const handleCreateChronicle = (entryData: Omit<ChronicleEntry, 'id' | 'timestamp' | 'likesCount'>) => {
+    const newEntry: ChronicleEntry = {
+      ...entryData,
+      id: `chron_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      likesCount: 0
+    };
+    setChronicles(prev => [newEntry, ...prev]);
+  };
+
+  const handleToggleBookmarkChronicle = (id: string) => {
+    setChronicles(prev => prev.map(c => c.id === id ? { ...c, isBookmarked: !c.isBookmarked } : c));
+  };
+
+  const handleLikeChronicle = (id: string) => {
+    setChronicles(prev => prev.map(c => c.id === id ? { ...c, likesCount: (c.likesCount || 0) + 1 } : c));
+  };
+
+  const handleDeleteChronicle = (id: string) => {
+    setChronicles(prev => prev.filter(c => c.id !== id));
+  };
 
   // Apply dark mode
   useEffect(() => {
@@ -297,6 +322,18 @@ export default function App() {
                 }}
             />
         );
+      case 'chronicle':
+        return (
+          <ChroniclePanel 
+            chronicles={chronicles}
+            currentUser={user}
+            missions={missions}
+            onCreateEntry={handleCreateChronicle}
+            onToggleBookmark={handleToggleBookmarkChronicle}
+            onLikeEntry={handleLikeChronicle}
+            onDeleteEntry={handleDeleteChronicle}
+          />
+        );
       default:
         return <div>Section under construction</div>;
     }
@@ -309,7 +346,7 @@ export default function App() {
        <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transform transition-transform duration-300 ease-in-out md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
              <div className="flex items-center gap-2 font-bold text-xl text-slate-800 dark:text-slate-100">
-                <Shield size={24} className="text-amber-800 fill-amber-400 dark:text-amber-600 dark:fill-amber-900" /> Nova Core
+                <Shield size={24} className="text-amber-800 fill-amber-400 dark:text-amber-600 dark:fill-amber-900" /> Nexus Nova Core
              </div>
              <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-slate-400 hover:text-slate-600">
                 <X size={20} />
@@ -323,6 +360,13 @@ export default function App() {
                 onClick={() => { setActiveTab('board'); setIsSidebarOpen(false); }}
              >
                 <Layout size={18} /> Mission Board
+             </Button>
+             <Button 
+                variant={activeTab === 'chronicle' ? 'primary' : 'ghost'} 
+                className={`w-full justify-start ${activeTab === 'chronicle' ? 'bg-indigo-600 text-white' : ''}`}
+                onClick={() => { setActiveTab('chronicle'); setIsSidebarOpen(false); }}
+             >
+                <BookOpen size={18} /> Chronicle
              </Button>
              <Button 
                 variant={activeTab === 'live' ? 'primary' : 'ghost'} 
@@ -402,7 +446,7 @@ export default function App() {
           </button>
           <div className="flex items-center gap-2">
              <Shield size={20} className="text-amber-800 fill-amber-400 dark:text-amber-600 dark:fill-amber-900" />
-             <span className="font-bold text-lg text-slate-800 dark:text-slate-100">Nova Core</span>
+             <span className="font-bold text-lg text-slate-800 dark:text-slate-100">Nexus Nova Core</span>
           </div>
           <div className="w-6" /> {/* Spacer */}
        </div>
@@ -411,7 +455,7 @@ export default function App() {
        <main className="md:ml-64 p-4 md:p-8 pt-20 md:pt-8 min-h-screen">
           <header className="flex flex-row items-center justify-between gap-4 mb-8">
              <div>
-                <h1 className="text-xl md:text-2xl font-bold capitalize text-slate-800 dark:text-white">{activeTab === 'board' ? 'Mission Board' : activeTab === 'issuer' ? 'My Agency' : activeTab}</h1>
+                <h1 className="text-xl md:text-2xl font-bold capitalize text-slate-800 dark:text-white">{activeTab === 'board' ? 'Mission Board' : activeTab === 'issuer' ? 'My Agency' : activeTab === 'chronicle' ? 'Guild Chronicles' : activeTab}</h1>
                 <p className="text-slate-500 dark:text-slate-400 text-xs md:text-sm">Welcome back, Agent {user.name}.</p>
              </div>
              
@@ -561,7 +605,7 @@ export default function App() {
        )}
 
        {/* Chat Component */}
-       <GuildChat cooldownDuration={chatCooldown} />
+       <GuildChat cooldownDuration={chatCooldown} user={user} />
        
        {/* Modals */}
        {selectedMissionId && (
@@ -586,8 +630,8 @@ export default function App() {
        
        {activeChatContactId && (
            <DirectMessageWindow 
-               contact={user.contacts.find(c => c.id === activeChatContactId) || { id: activeChatContactId, name: 'Unknown', role: 'Unknown', avatarUrl: '', status: 'Online', level: 0 }}
-               currentUserAvatar={user.avatarUrl || ''}
+               contact={user.contacts.find(c => c.id === activeChatContactId) || { id: activeChatContactId, name: 'Unknown', role: 'Unknown', avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${activeChatContactId}`, status: 'Online', level: 0 }}
+               currentUserAvatar={user.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`}
                onClose={() => setActiveChatContactId(null)}
            />
        )}

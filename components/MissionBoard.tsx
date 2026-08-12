@@ -57,10 +57,10 @@ export const MissionBoard: React.FC<MissionBoardProps> = ({
       const isRelevantStatus = 
         m.status === MissionStatus.Open || 
         m.status === MissionStatus.Urgent ||
-        (m.status === MissionStatus.Claimed && m.assigneeId === user.id) ||
-        (m.status === MissionStatus.InProgress && m.assigneeId === user.id) ||
-        (m.status === MissionStatus.Verifying && m.assigneeId === user.id) ||
-        (m.status === MissionStatus.Verified && m.assigneeId === user.id);
+        (m.status === MissionStatus.Claimed && m.assigneeId === user?.id) ||
+        (m.status === MissionStatus.InProgress && m.assigneeId === user?.id) ||
+        (m.status === MissionStatus.Verifying && m.assigneeId === user?.id) ||
+        (m.status === MissionStatus.Verified && m.assigneeId === user?.id);
 
       return matchesSearch && matchesType && matchesDiff && matchesRemote && matchesHighPay && matchesUrgent && isRelevantStatus;
     }).sort((a, b) => {
@@ -68,7 +68,7 @@ export const MissionBoard: React.FC<MissionBoardProps> = ({
       if (sortBy === 'difficulty') return a.difficulty.localeCompare(b.difficulty); // Approximate string sort for ranks
       return new Date(b.postedDate).getTime() - new Date(a.postedDate).getTime(); // Newest first
     });
-  }, [missions, searchQuery, selectedType, selectedDifficulty, sortBy, showRemoteOnly, showHighPayOnly, showUrgentOnly, user.id]);
+  }, [missions, searchQuery, selectedType, selectedDifficulty, sortBy, showRemoteOnly, showHighPayOnly, showUrgentOnly, user?.id]);
 
   const activeFiltersCount = (selectedType !== 'All' ? 1 : 0) + (selectedDifficulty !== 'All' ? 1 : 0) + (showRemoteOnly ? 1 : 0) + (showHighPayOnly ? 1 : 0) + (showUrgentOnly ? 1 : 0);
 
