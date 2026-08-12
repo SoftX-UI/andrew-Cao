@@ -1,10 +1,11 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Send, User as UserIcon, Clock, MapPin, Upload, PauseCircle, PlayCircle, AlertCircle, History, Shield, CheckCircle2, Bookmark, BookmarkMinus, Zap, Edit2, Save, Calendar, Gift, Briefcase, ArrowRight, Map, Navigation, Locate, Building2, Eye, Loader2, ExternalLink, Video, Lock, Key, Copy, EyeOff, Download, Monitor, Globe, Users, Thermometer, Wind, CloudLightning, Mountain, RefreshCw, Search, Phone, Stamp, Ban, Check, DollarSign, Tag, Star } from 'lucide-react';
+import { X, Send, User as UserIcon, Clock, MapPin, Upload, PauseCircle, PlayCircle, AlertCircle, History, Shield, CheckCircle2, Bookmark, BookmarkMinus, Zap, Edit2, Save, Calendar, Gift, Briefcase, ArrowRight, Map, Navigation, Locate, Building2, Eye, Loader2, ExternalLink, Video, Lock, Key, Copy, EyeOff, Download, Monitor, Globe, Users, Thermometer, Wind, CloudLightning, Mountain, RefreshCw, Search, Phone, Stamp, Ban, Check, DollarSign, Tag, Star, Mic, MicOff, Volume2, FileText } from 'lucide-react';
 import { Mission, User, MissionStatus, MissionType, MissionDifficulty, UserRole, EnvironmentalData } from '../types';
 import { Button, Badge, Card, Input } from './Shared';
 import { STATUS_COLORS, DIFFICULTY_COLORS, TYPE_ICONS, ISSUERS, TYPE_COLORS } from '../constants';
 import { getLocationIntel, getEnvironmentalData } from '../services/geminiService';
+import { analyzeVoiceTranscript, VoiceAnalysisResult } from '../services/voiceAnalysisService';
 
 interface MissionDetailsModalProps {
   mission: Mission;
@@ -101,6 +102,213 @@ export const MissionDetailsModal: React.FC<MissionDetailsModalProps> = ({
   // Verification State (Issuer/Admin)
   const [verificationStamp, setVerificationStamp] = useState<'PASS' | 'NOT PASS' | null>(null);
   const [verificationNote, setVerificationNote] = useState('');
+
+  // Web Speech API Voice Report & Feedback State
+  const [isListening, setIsListening] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [voiceReportType, setVoiceReportType] = useState<'completion' | 'feedback'>('completion');
+  const [speechError, setSpeechError] = useState<string | null>(null);
+  const [voiceTranscriptsList, setVoiceTranscriptsList] = useState<Array<{
+    id: string;
+    type: 'completion' | 'feedback';
+    text: string;
+    timestamp: string;
+    author: string;
+    analysis?: VoiceAnalysisResult;
+  }>>(() => {
+    try {
+      const saved = localStorage.getItem(`voice_transcripts_${mission.id}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.map((item: any) => ({
+          ...item,
+          analysis: item.analysis || analyzeVoiceTranscript(item.text, item.type, item.author)
+        }));
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const recognitionRef = useRef<any>(null);
+  const isSpeechSupported = typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+
+  // Cleanup speech recognition on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+    };
+  }, []);
+
+  const toggleVoiceRecording = async () => {
+    setSpeechError(null);
+    if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+      setIsListening(false);
+      return;
+    }
+
+    if (!isSpeechSupported) {
+      setSpeechError("Web Speech API is not supported in this browser environment. You can type your report directly into the box below.");
+      return;
+    }
+
+    // Attempt explicit microphone permission request first
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Close stream immediately after permission granted
+        stream.getTracks().forEach(track => track.stop());
+      } catch (micErr: any) {
+        console.warn("User or browser denied microphone access:", micErr);
+        setSpeechError("Microphone permission was denied or restricted by browser iFrame security. You can click 'Open App in New Tab' to bypass iFrame restrictions, or type your report manually below.");
+        setIsListening(false);
+        return;
+      }
+    }
+
+    try {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        setSpeechError(null);
+      };
+
+      recognition.onresult = (event: any) => {
+        let currentText = '';
+        for (let i = 0; i < event.results.length; i++) {
+          currentText += event.results[i][0].transcript;
+        }
+        setVoiceTranscript(currentText);
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error("Speech recognition error:", event.error);
+        setIsListening(false);
+        if (event.error === 'not-allowed') {
+          setSpeechError("Microphone permission denied by browser/iFrame settings. Please grant microphone access, open in a new tab, or type your report manually below.");
+        } else if (event.error === 'no-speech') {
+          setSpeechError("No speech detected. Please speak clearly into your microphone.");
+        } else if (event.error === 'audio-capture') {
+          setSpeechError("No microphone found. Please connect an audio input device.");
+        } else {
+          setSpeechError(`Speech recognition notice: ${event.error}. You can still type your report manually.`);
+        }
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err: any) {
+      console.error("Failed to initialize speech recognition", err);
+      setSpeechError("Could not start voice input. You can type your report directly into the text box below.");
+      setIsListening(false);
+    }
+  };
+
+  const startCommentDictation = async () => {
+    if (isListening) {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (e) {}
+      }
+      setIsListening(false);
+      return;
+    }
+
+    if (!isSpeechSupported) {
+      alert("Web Speech API is not supported in this browser.");
+      return;
+    }
+
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+      } catch (err) {
+        console.warn("Microphone permission denied:", err);
+        setSpeechError("Microphone permission was denied by browser/iFrame settings. Click 'Open App in New Tab' to use microphone dictation.");
+        return;
+      }
+    }
+
+    try {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+      recognition.onstart = () => setIsListening(true);
+      recognition.onresult = (event: any) => {
+        let text = '';
+        for (let i = 0; i < event.results.length; i++) {
+          text += event.results[i][0].transcript;
+        }
+        setCommentText(text);
+      };
+      recognition.onerror = (e: any) => {
+        console.error("Speech error:", e.error);
+        setIsListening(false);
+        if (e.error === 'not-allowed') {
+          setSpeechError("Microphone permission denied by browser/iFrame settings. Please allow microphone access or open app in a new tab.");
+        }
+      };
+      recognition.onend = () => setIsListening(false);
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (e) {
+      console.error(e);
+      setIsListening(false);
+    }
+  };
+
+  const handleSaveVoiceTranscript = () => {
+    if (!voiceTranscript.trim()) return;
+
+    const analysis = analyzeVoiceTranscript(voiceTranscript.trim(), voiceReportType, currentUser.name);
+
+    const newEntry = {
+      id: 'vt_' + Date.now(),
+      type: voiceReportType,
+      text: voiceTranscript.trim(),
+      timestamp: new Date().toISOString(),
+      author: currentUser.name,
+      analysis
+    };
+
+    const updatedList = [newEntry, ...voiceTranscriptsList];
+    setVoiceTranscriptsList(updatedList);
+    try {
+      localStorage.setItem(`voice_transcripts_${mission.id}`, JSON.stringify(updatedList));
+    } catch (e) {
+      console.error(e);
+    }
+
+    // Log to Guild Comms comments so it is stored and shared with rich analysis tags
+    const tagLabel = voiceReportType === 'completion' ? '🎙️ [VOICE MISSION COMPLETION REPORT]' : '🎙️ [VOICE GUILD FEEDBACK]';
+    const analysisNote = `\n\n📊 [AUTOMATED NLP ANALYSIS]:\n• Sentiment: ${analysis.sentiment} (${analysis.sentimentScore}% Positivity)\n• Keywords: ${analysis.keywords.join(', ')}\n• Summary: "${analysis.summary}"`;
+    onAddComment(mission.id, `${tagLabel}\n"${voiceTranscript.trim()}"${analysisNote}`);
+
+    // Reset voice transcript input
+    setVoiceTranscript('');
+    setSpeechError(null);
+  };
 
   const commentsEndRef = useRef<HTMLDivElement>(null);
   const issuerName = ISSUERS[mission.issuerId] || 'Unknown Client';
@@ -325,6 +533,28 @@ export const MissionDetailsModal: React.FC<MissionDetailsModalProps> = ({
 
   // View Permissions for Virtual Details
   const canViewVirtualDetails = isAssignee || isIssuer || isAdmin;
+
+  // Automated Voice Sentiment & Keyword Analysis for Mission Status Tracker
+  const completionTranscripts = voiceTranscriptsList.filter(t => t.type === 'completion' || t.text.trim().length > 0);
+  const latestCompletion = completionTranscripts.length > 0 ? completionTranscripts[0] : null;
+  const latestAnalysis: VoiceAnalysisResult | null = latestCompletion 
+    ? (latestCompletion.analysis || analyzeVoiceTranscript(latestCompletion.text, latestCompletion.type, latestCompletion.author))
+    : (mission.completionSummary ? {
+        sentiment: mission.completionSummary.sentiment,
+        sentimentScore: mission.completionSummary.sentimentScore,
+        sentimentColor: 'text-emerald-400',
+        sentimentBadgeClass: 'bg-emerald-950/80 text-emerald-300 border-emerald-800',
+        keywords: mission.completionSummary.keywords,
+        summary: mission.completionSummary.voiceSummary,
+        keyTakeaways: mission.completionSummary.keyTakeaways,
+        timestamp: mission.completionSummary.lastUpdated,
+        author: mission.completionSummary.authorName || 'Operative',
+        reportType: 'completion'
+      } : null);
+
+  const liveAnalysis = voiceTranscript.trim() 
+    ? analyzeVoiceTranscript(voiceTranscript.trim(), voiceReportType, currentUser.name)
+    : null;
 
   return (
      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -847,9 +1077,123 @@ export const MissionDetailsModal: React.FC<MissionDetailsModalProps> = ({
 
                       {/* ... History ... */}
                       <div className="mt-6 border-t border-slate-200 pt-6 dark:border-slate-800">
-                            <h3 className="font-bold text-slate-800 mb-4 dark:text-slate-200 flex items-center gap-2">
-                                <History size={16} /> Mission Timeline
-                            </h3>
+                            <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                                <h3 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                                    <History size={16} /> Mission Status Tracker & Timeline
+                                </h3>
+                                {latestAnalysis && (
+                                    <Badge className={`${latestAnalysis.sentimentBadgeClass} text-xs font-semibold px-2.5 py-1 flex items-center gap-1.5 shadow-sm`}>
+                                        <Zap size={13} /> {latestAnalysis.sentiment} ({latestAnalysis.sentimentScore}% Positivity)
+                                    </Badge>
+                                )}
+                            </div>
+
+                            {/* --- VOICE COMPLETION SUMMARY DISPLAY CARD --- */}
+                            <div className="mb-6 p-5 rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 border border-indigo-800/80 shadow-xl text-slate-100 relative overflow-hidden">
+                              <div className="absolute -top-10 -right-10 w-40 h-40 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
+
+                              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-indigo-800/60 mb-4">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="p-2 bg-indigo-900/60 border border-indigo-700/80 rounded-xl text-indigo-300">
+                                    <Mic size={20} className="animate-pulse text-indigo-400" />
+                                  </div>
+                                  <div>
+                                    <h4 className="font-bold text-sm text-white tracking-wide flex items-center gap-2">
+                                      VOICE DEBRIEF & COMPLETION SUMMARY
+                                      <Badge className="bg-indigo-900/80 text-indigo-300 border-indigo-700 text-[10px]">
+                                        AUTOMATED NLP ANALYTICS
+                                      </Badge>
+                                    </h4>
+                                    <p className="text-xs text-indigo-200/70 font-mono">
+                                      Status Tracker Sentiment & Keyword Extraction
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {latestAnalysis ? (
+                                <div className="space-y-4">
+                                  {/* Positivity Progress Bar */}
+                                  <div>
+                                    <div className="flex justify-between items-center text-xs text-slate-300 font-mono mb-1.5">
+                                      <span className="flex items-center gap-1">
+                                        <Star size={12} className="text-indigo-400" /> Sentiment Confidence Index
+                                      </span>
+                                      <span className={`font-bold ${latestAnalysis.sentimentColor}`}>{latestAnalysis.sentimentScore}% Positivity</span>
+                                    </div>
+                                    <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-700/60">
+                                      <div 
+                                        className={`h-full rounded-full transition-all duration-500 ${
+                                          latestAnalysis.sentimentScore >= 75 
+                                            ? 'bg-gradient-to-r from-emerald-500 to-teal-400' 
+                                            : latestAnalysis.sentimentScore >= 50 
+                                            ? 'bg-gradient-to-r from-cyan-500 to-blue-400' 
+                                            : 'bg-gradient-to-r from-amber-500 to-red-500'
+                                        }`}
+                                        style={{ width: `${latestAnalysis.sentimentScore}%` }}
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Summary Box */}
+                                  <div className="bg-slate-950/70 border border-indigo-900/60 rounded-xl p-3.5 space-y-2">
+                                    <div className="text-xs font-mono text-indigo-300 font-semibold flex items-center gap-1.5">
+                                      <FileText size={14} className="text-indigo-400" /> Automated Mission Synthesis
+                                    </div>
+                                    <p className="text-xs text-slate-200 leading-relaxed italic font-serif">
+                                      "{latestAnalysis.summary}"
+                                    </p>
+                                  </div>
+
+                                  {/* Extracted Keywords */}
+                                  <div>
+                                    <span className="text-[11px] text-slate-400 font-mono block mb-1.5 uppercase font-bold">Extracted Keyword Markers:</span>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {latestAnalysis.keywords.map((kw, i) => (
+                                        <span key={i} className="px-2.5 py-1 rounded-md bg-indigo-950/90 text-indigo-300 border border-indigo-800/80 text-xs font-mono flex items-center gap-1 hover:border-indigo-600 transition-colors">
+                                          <Tag size={11} className="text-indigo-400" /> {kw}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+
+                                  {/* Key Takeaways */}
+                                  {latestAnalysis.keyTakeaways.length > 0 && (
+                                    <div className="bg-indigo-950/40 border border-indigo-900/50 rounded-lg p-3 space-y-1">
+                                      <span className="text-[10px] font-mono text-indigo-300 uppercase font-bold">Operational Insights:</span>
+                                      <ul className="space-y-1 text-xs text-slate-300">
+                                        {latestAnalysis.keyTakeaways.map((takeaway, i) => (
+                                          <li key={i} className="flex items-start gap-1.5">
+                                            <span className="text-indigo-400">•</span>
+                                            <span>{takeaway}</span>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+
+                                  {/* Raw Transcript Quote */}
+                                  {latestCompletion && (
+                                    <div className="pt-2 border-t border-indigo-900/40 flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                                      <span className="flex items-center gap-1 text-slate-300">
+                                        <Mic size={12} className="text-indigo-400" /> Debriefed by <strong className="text-white">{latestCompletion.author}</strong>
+                                      </span>
+                                      <span>{new Date(latestCompletion.timestamp).toLocaleString()}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="p-4 bg-slate-950/50 border border-dashed border-indigo-900/60 rounded-xl text-center space-y-2">
+                                  <p className="text-xs text-indigo-300/80 font-mono">
+                                    No voice completion transcript recorded for this mission yet.
+                                  </p>
+                                  <p className="text-[11px] text-slate-400">
+                                    Use the Voice Report Console below to record or type a voice debrief to generate automated sentiment and keyword completion summaries.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+
                             <div className="relative pl-8 border-l-2 border-slate-200 dark:border-slate-800 space-y-6">
                                 {mission.history && mission.history.length > 0 ? (
                                     mission.history.map((entry, idx) => {
@@ -902,13 +1246,224 @@ export const MissionDetailsModal: React.FC<MissionDetailsModalProps> = ({
                             </div>
                        </div>
 
-                      {/* ... Comments Section ... */}
-                      <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-800">
-                         <div className="flex items-center justify-between">
-                            <h3 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                               Guild Comms <span className="bg-slate-200 text-slate-600 text-xs px-2 py-0.5 rounded-full dark:bg-slate-800 dark:text-slate-400">{mission.comments.length}</span>
-                            </h3>
-                         </div>
+                       {/* Voice-Based Feedback & Mission Completion Report Section */}
+                       <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-4 shadow-lg text-slate-100 my-6">
+                          <div className="flex justify-between items-center flex-wrap gap-2">
+                             <div className="flex items-center gap-2">
+                                <div className="p-2 bg-indigo-950 border border-indigo-800 rounded-lg text-indigo-400">
+                                   <Mic size={18} className={isListening ? 'animate-pulse text-red-400' : ''} />
+                                </div>
+                                <div>
+                                   <h4 className="font-bold text-sm font-mono text-slate-100 flex items-center gap-2">
+                                      VOICE REPORT & FEEDBACK CONSOLE
+                                      <Badge className="bg-indigo-950 text-indigo-300 border-indigo-800 text-[10px]">WEB SPEECH API</Badge>
+                                   </h4>
+                                   <p className="text-[11px] text-slate-400 font-mono">
+                                      Provide voice debriefs or feedback with automatic speech-to-text transcription.
+                                   </p>
+                                </div>
+                             </div>
+                             <Button
+                                onClick={toggleVoiceRecording}
+                                className={`font-mono text-xs px-3 py-1.5 h-auto flex items-center gap-2 ${
+                                   isListening 
+                                      ? 'bg-red-600 hover:bg-red-500 text-white animate-pulse' 
+                                      : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                                }`}
+                             >
+                                {isListening ? (
+                                   <>
+                                      <MicOff size={14} /> STOP RECORDING
+                                   </>
+                                ) : (
+                                   <>
+                                      <Mic size={14} /> START VOICE INPUT
+                                   </>
+                                )}
+                             </Button>
+                          </div>
+
+                          {/* Active Speech Recording Wave / Indicator */}
+                          {isListening && (
+                             <div className="p-3 bg-red-950/40 border border-red-800/60 rounded-lg flex items-center gap-3 animate-in fade-in">
+                                <span className="relative flex h-3 w-3">
+                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                   <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                                </span>
+                                <p className="text-xs font-mono text-red-300 animate-pulse">
+                                   Listening... Speak your feedback or completion debrief into your microphone.
+                                </p>
+                             </div>
+                          )}
+
+                          {speechError && (
+                             <div className="p-2.5 bg-amber-950/50 border border-amber-800 rounded-lg text-xs font-mono text-amber-300 flex items-center gap-2">
+                                <AlertCircle size={14} className="shrink-0 text-amber-400 mt-0.5" />
+                                <div className="flex-1 space-y-2">
+                                   <div>{speechError}</div>
+                                   <div className="flex flex-wrap gap-2 pt-1.5 border-t border-amber-800/40">
+                                      <button
+                                         type="button"
+                                         onClick={toggleVoiceRecording}
+                                         className="px-2.5 py-1 bg-amber-900/80 hover:bg-amber-800 border border-amber-700 rounded text-[11px] text-amber-100 flex items-center gap-1 font-bold"
+                                      >
+                                         <Mic size={12} /> Re-request Mic Access
+                                      </button>
+                                      <button
+                                         type="button"
+                                         onClick={() => window.open(window.location.href, '_blank')}
+                                         className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[11px] text-slate-200 flex items-center gap-1 font-bold"
+                                      >
+                                         <ExternalLink size={12} /> Open App in New Tab
+                                      </button>
+                                   </div>
+                                </div>
+                             </div>
+                          )}
+
+                          {/* Transcript Input / Edit Area */}
+                          <div className="space-y-3">
+                             <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                   <label className="text-xs font-mono text-slate-400">Report Category:</label>
+                                   <div className="flex bg-slate-950 border border-slate-800 rounded p-0.5 text-xs font-mono">
+                                      <button
+                                         type="button"
+                                         onClick={() => setVoiceReportType('completion')}
+                                         className={`px-2.5 py-1 rounded transition-colors ${
+                                            voiceReportType === 'completion' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'
+                                         }`}
+                                      >
+                                         Completion Report
+                                      </button>
+                                      <button
+                                         type="button"
+                                         onClick={() => setVoiceReportType('feedback')}
+                                         className={`px-2.5 py-1 rounded transition-colors ${
+                                            voiceReportType === 'feedback' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'
+                                         }`}
+                                      >
+                                         Guild Feedback
+                                      </button>
+                                   </div>
+                                </div>
+                                {voiceTranscript && (
+                                   <span className="text-[10px] font-mono text-cyan-400">
+                                      {voiceTranscript.length} characters transcribed
+                                   </span>
+                                )}
+                             </div>
+
+                             <textarea
+                                value={voiceTranscript}
+                                onChange={(e) => setVoiceTranscript(e.target.value)}
+                                placeholder="Your voice transcript will appear here live as you speak, or you can edit/type here..."
+                                className="w-full h-24 p-3 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-slate-200 focus:outline-none focus:border-indigo-500 placeholder:text-slate-600 resize-none"
+                             />
+
+                             {/* Live Real-time Sentiment & Keyword Extraction Preview */}
+                             {liveAnalysis && (
+                                <div className="p-3 bg-indigo-950/70 border border-indigo-800/80 rounded-lg text-xs font-mono space-y-2 animate-in fade-in">
+                                   <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <span className="text-indigo-300 font-bold flex items-center gap-1.5">
+                                         <Zap size={14} className="text-indigo-400" /> LIVE NLP ANALYSIS PREVIEW:
+                                      </span>
+                                      <Badge className={`${liveAnalysis.sentimentBadgeClass} text-[10px] px-2 py-0.5`}>
+                                         Tone: {liveAnalysis.sentiment} ({liveAnalysis.sentimentScore}% Positivity)
+                                      </Badge>
+                                   </div>
+                                   <div className="flex flex-wrap items-center gap-1">
+                                      <span className="text-[10px] text-slate-400 font-bold uppercase">Extracted Keywords:</span>
+                                      {liveAnalysis.keywords.map((kw, idx) => (
+                                         <span key={idx} className="text-[10px] text-indigo-300 bg-indigo-900/80 px-2 py-0.5 rounded border border-indigo-700/80 font-mono flex items-center gap-1">
+                                            <Tag size={9} /> {kw}
+                                         </span>
+                                      ))}
+                                   </div>
+                                   <p className="text-[11px] text-slate-300 italic border-t border-indigo-900/60 pt-1.5">
+                                      "Summary: {liveAnalysis.summary}"
+                                   </p>
+                                </div>
+                             )}
+
+                             <div className="flex justify-between items-center">
+                                <span className="text-[10px] text-slate-500 font-mono">
+                                   Transcripts are stored locally and logged to Guild Comms.
+                                </span>
+                                <div className="flex gap-2">
+                                   {voiceTranscript && (
+                                      <Button
+                                         type="button"
+                                         variant="ghost"
+                                         onClick={() => setVoiceTranscript('')}
+                                         className="text-xs font-mono text-slate-400 hover:text-slate-200"
+                                      >
+                                         Clear
+                                      </Button>
+                                   )}
+                                   <Button
+                                      type="button"
+                                      onClick={handleSaveVoiceTranscript}
+                                      disabled={!voiceTranscript.trim()}
+                                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-mono px-4 h-8"
+                                   >
+                                      <FileText size={14} /> Save & Log Transcript
+                                   </Button>
+                                </div>
+                             </div>
+                          </div>
+
+                          {/* Stored Voice Transcripts History */}
+                          {voiceTranscriptsList.length > 0 && (
+                             <div className="pt-3 border-t border-slate-800 space-y-2">
+                                <h5 className="text-[11px] font-mono font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                   <Volume2 size={12} className="text-indigo-400" /> Recorded Voice Transcripts ({voiceTranscriptsList.length})
+                                </h5>
+                                <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
+                                   {voiceTranscriptsList.map((item) => {
+                                      const itemAnalysis = item.analysis || analyzeVoiceTranscript(item.text, item.type, item.author);
+                                      return (
+                                         <div key={item.id} className="p-3 bg-slate-950 rounded-lg border border-slate-800 text-xs font-mono space-y-2">
+                                            <div className="flex justify-between items-center flex-wrap gap-2">
+                                               <div className="flex items-center gap-2">
+                                                  <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-bold ${
+                                                     item.type === 'completion' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-purple-950 text-purple-400 border border-purple-800'
+                                                  }`}>
+                                                     {item.type === 'completion' ? 'Completion Report' : 'Guild Feedback'}
+                                                  </span>
+                                                  <Badge className={`${itemAnalysis.sentimentBadgeClass} text-[9px] px-1.5 py-0.5`}>
+                                                     {itemAnalysis.sentiment} ({itemAnalysis.sentimentScore}%)
+                                                  </Badge>
+                                               </div>
+                                               <span className="text-[10px] text-slate-500">{new Date(item.timestamp).toLocaleString()}</span>
+                                            </div>
+                                            <p className="text-slate-300 italic text-[11px] leading-relaxed">"{item.text}"</p>
+                                            
+                                            {/* Extracted Keywords */}
+                                            <div className="flex flex-wrap items-center gap-1 pt-1 border-t border-slate-900">
+                                               <span className="text-[10px] text-slate-500">Keywords:</span>
+                                               {itemAnalysis.keywords.map((kw, k) => (
+                                                  <span key={k} className="text-[10px] text-indigo-300 bg-indigo-950/80 px-1.5 py-0.5 rounded border border-indigo-900/80">
+                                                     {kw}
+                                                  </span>
+                                               ))}
+                                            </div>
+                                            <div className="text-[10px] text-slate-500 text-right">— {item.author}</div>
+                                         </div>
+                                      );
+                                   })}
+                                </div>
+                             </div>
+                          )}
+                       </div>
+
+                       {/* Comments Section */}
+                       <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+                          <div className="flex items-center justify-between">
+                             <h3 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                                Guild Comms <span className="bg-slate-200 text-slate-600 text-xs px-2 py-0.5 rounded-full dark:bg-slate-800 dark:text-slate-400">{mission.comments.length}</span>
+                             </h3>
+                          </div>
 
                          <div className="space-y-4 min-h-[100px]">
                             {mission.comments.length === 0 ? (
@@ -1149,13 +1704,23 @@ export const MissionDetailsModal: React.FC<MissionDetailsModalProps> = ({
             {!isEditing && activeTab === 'brief' && !canVerify && (
                 <div className="p-4 bg-white border-t border-slate-200 dark:bg-slate-900 dark:border-slate-800 shrink-0">
                    <form onSubmit={handleSubmit} className="flex gap-2">
-                      <div className="relative flex-1">
+                      <div className="relative flex-1 flex items-center">
                          <input
-                            className="w-full pl-4 pr-4 py-3 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-guild-500/20 focus:border-guild-500 transition-all text-slate-900 placeholder:text-slate-400 dark:bg-white dark:border-slate-200 dark:text-slate-900 dark:placeholder:text-slate-500"
-                            placeholder="Write a comment or inquiry..."
+                            className="w-full pl-4 pr-10 py-3 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-guild-500/20 focus:border-guild-500 transition-all text-slate-900 placeholder:text-slate-400 dark:bg-white dark:border-slate-200 dark:text-slate-900 dark:placeholder:text-slate-500"
+                            placeholder="Write a comment or dictate with microphone..."
                             value={commentText}
                             onChange={(e) => setCommentText(e.target.value)}
                          />
+                         <button
+                            type="button"
+                            onClick={startCommentDictation}
+                            className={`absolute right-3 p-1.5 rounded-full transition-colors ${
+                               isListening ? 'text-red-500 animate-pulse bg-red-100 dark:bg-red-900/30' : 'text-slate-400 hover:text-indigo-600'
+                            }`}
+                            title={isListening ? "Listening... Click to stop" : "Voice dictation"}
+                         >
+                            <Mic size={18} />
+                         </button>
                       </div>
                       <Button type="submit" disabled={!commentText.trim()} className="!px-4">
                          <Send size={18} />

@@ -2,8 +2,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Mission, User, MissionStatus } from '../types';
 import { Card, Badge, Button } from './Shared';
-import { Radio, AlertCircle, Users, ChevronLeft, ChevronRight, GripVertical, Minimize2, Maximize2, Crosshair, Zap, Plus, DollarSign, ScanLine, CloudLightning, Skull, WifiOff, Target, Navigation, Shield, PlayCircle, X, Briefcase, ZoomIn, ZoomOut, ChevronDown, ChevronUp, Maximize, Minimize, Bookmark, CheckCircle2, Activity, Radar, Server, Signal } from 'lucide-react';
+import { Radio, AlertCircle, Users, ChevronLeft, ChevronRight, GripVertical, Minimize2, Maximize2, Crosshair, Zap, Plus, DollarSign, ScanLine, CloudLightning, Skull, WifiOff, Target, Navigation, Shield, PlayCircle, X, Briefcase, ZoomIn, ZoomOut, ChevronDown, ChevronUp, Maximize, Minimize, Bookmark, CheckCircle2, Activity, Radar, Server, Signal, Compass, Map as MapIcon, Route } from 'lucide-react';
 import { STATUS_COLORS, DIFFICULTY_COLORS } from '../constants';
+import { RealmMap } from './RealmMap';
 
 interface LiveOperationsPanelProps {
   missions: Mission[];
@@ -45,6 +46,7 @@ export const LiveOperationsPanel: React.FC<LiveOperationsPanelProps> = ({
     onSelectMission
 }) => {
     const [layoutMode, setLayoutMode] = useState<'split' | 'expanded' | 'compressed'>('split');
+    const [opsViewMode, setOpsViewMode] = useState<'realm_map' | 'radar'>('realm_map');
     const [isFullScreen, setIsFullScreen] = useState(false);
     const [isFeedCollapsed, setIsFeedCollapsed] = useState(false);
     const [mapZoom, setMapZoom] = useState(1);
@@ -255,12 +257,37 @@ export const LiveOperationsPanel: React.FC<LiveOperationsPanelProps> = ({
             >
                 <Card className={`flex-1 relative overflow-hidden bg-black border-slate-800 flex flex-col z-10 shadow-2xl ${isFullScreen ? 'rounded-none border-0' : 'border'}`}>
                     {/* Tactical Header */}
-                    <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-950 z-20">
+                    <div className="p-3 border-b border-slate-800 flex flex-wrap justify-between items-center bg-slate-950 z-20 gap-3">
                         <div className="flex items-center gap-4">
                             <h3 className="text-slate-200 font-bold font-mono text-sm flex items-center gap-2">
                                 <Radio className={`text-red-500 ${isScanning ? 'animate-pulse' : ''}`} size={16} />
                                 LIVE_OPS // <span className="text-slate-500">SECTOR_7G</span>
                             </h3>
+
+                            {/* View Switcher: Realm Map & Routes vs Tactical Radar */}
+                            <div className="flex bg-slate-900 border border-slate-800 rounded p-0.5">
+                                <button 
+                                    onClick={() => setOpsViewMode('realm_map')}
+                                    className={`px-3 py-1 text-xs font-mono rounded flex items-center gap-1.5 transition-colors ${
+                                        opsViewMode === 'realm_map' 
+                                        ? 'bg-cyan-600 text-white font-bold shadow-md shadow-cyan-600/20' 
+                                        : 'text-slate-400 hover:text-slate-200'
+                                    }`}
+                                >
+                                    <Route size={13} /> REALM MAP & ROUTES
+                                </button>
+                                <button 
+                                    onClick={() => setOpsViewMode('radar')}
+                                    className={`px-3 py-1 text-xs font-mono rounded flex items-center gap-1.5 transition-colors ${
+                                        opsViewMode === 'radar' 
+                                        ? 'bg-cyan-600 text-white font-bold shadow-md shadow-cyan-600/20' 
+                                        : 'text-slate-400 hover:text-slate-200'
+                                    }`}
+                                >
+                                    <Radar size={13} /> TACTICAL RADAR
+                                </button>
+                            </div>
+
                             <button 
                                 onClick={() => setIsScanning(!isScanning)}
                                 className={`text-[10px] px-3 py-1 rounded-sm border transition-all flex items-center gap-2 font-mono tracking-wider ${
@@ -323,12 +350,23 @@ export const LiveOperationsPanel: React.FC<LiveOperationsPanelProps> = ({
                         </div>
                     </div>
 
-                    {/* Visual Map Area */}
-                    <div 
-                        className="flex-1 relative bg-black overflow-hidden group cursor-crosshair"
-                        onClick={() => setSelectedMissionId(null)}
-                        onWheel={(e) => setMapZoom(prev => Math.max(0.5, Math.min(3, prev + e.deltaY * -0.001)))}
-                    >
+                    {/* Map Content View Area */}
+                    {opsViewMode === 'realm_map' ? (
+                        <div className="flex-1 relative bg-slate-950 overflow-hidden">
+                            <RealmMap 
+                                missions={missions} 
+                                selectedMissionId={selectedMissionId} 
+                                onSelectMission={setSelectedMissionId} 
+                                onUpdateStatus={onUpdateStatus} 
+                            />
+                        </div>
+                    ) : (
+                        /* Visual Radar Area */
+                        <div 
+                            className="flex-1 relative bg-black overflow-hidden group cursor-crosshair"
+                            onClick={() => setSelectedMissionId(null)}
+                            onWheel={(e) => setMapZoom(prev => Math.max(0.5, Math.min(3, prev + e.deltaY * -0.001)))}
+                        >
                         {/* Container for zoomed content */}
                         <div 
                             className="absolute inset-0 transition-transform duration-200 ease-out origin-center"
@@ -445,6 +483,7 @@ export const LiveOperationsPanel: React.FC<LiveOperationsPanelProps> = ({
                             </div>
                         </div>
                     </div>
+                    )}
                     
                     {/* Active Operations List (Collapsible Bottom Overlay) */}
                     {layoutMode !== 'compressed' && (

@@ -119,6 +119,17 @@ export interface VirtualCoordinates {
   passcodeVisibility?: 'public' | 'limited'; // Control viewing standards
 }
 
+export interface MissionCompletionSummary {
+  voiceSummary: string;
+  sentiment: 'Positive' | 'Neutral' | 'Urgent / Caution' | 'Negative' | 'Triumphant';
+  sentimentScore: number;
+  keywords: string[];
+  keyTakeaways: string[];
+  lastUpdated: string;
+  authorName?: string;
+  rawTranscript?: string;
+}
+
 export interface Mission {
   id: string;
   title: string;
@@ -142,6 +153,7 @@ export interface Mission {
   history: MissionHistory[];
   virtualCoordinates?: VirtualCoordinates;
   environmentalData?: EnvironmentalData;
+  completionSummary?: MissionCompletionSummary;
   adminVerification?: {
     isPassed: boolean;
     verifiedBy: string;
