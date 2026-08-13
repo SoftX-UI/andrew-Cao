@@ -5,7 +5,7 @@ import {
   Menu, X, Shield, LogOut, Inbox, Info, AlertCircle, Briefcase, User as UserIcon, BookOpen
 } from 'lucide-react';
 
-import { User, Mission, MissionStatus, Ad, FeedbackItem, UserRole, DeviceType, AdminLog, ChronicleEntry } from './types';
+import { User, Mission, MissionStatus, Ad, FeedbackItem, UserRole, DeviceType, AdminLog, ChronicleEntry, UserPreferences } from './types';
 import { CURRENT_USER, MOCK_MISSIONS, MOCK_ADS, MOCK_NEWS, MOCK_FEEDBACKS, MOCK_MAIL, PRESET_USERS, MOCK_CHRONICLES } from './constants';
 
 import { Button, Badge } from './components/Shared';
@@ -50,6 +50,37 @@ export default function App() {
   
   const [activeChatContactId, setActiveChatContactId] = useState<string | null>(null);
   const [chatCooldown, setChatCooldown] = useState(30);
+
+  // User Preferences State
+  const [userPreferences, setUserPreferences] = useState<UserPreferences>(() => {
+    const savedLang = localStorage.getItem('nexus_nova_language') || 'en';
+    return {
+      theme: 'light',
+      language: savedLang,
+      preferredTranslationLanguage: savedLang,
+      autoDetectLanguage: false,
+      soundVolume: 80,
+      notificationsEnabled: true
+    };
+  });
+
+  // Backend Health Check State (/api/health)
+  const [backendStatus, setBackendStatus] = useState<'checking' | 'connected' | 'not reachable'>('checking');
+
+  useEffect(() => {
+    fetch('/api/health')
+      .then(res => res.ok ? res.json() : Promise.reject())
+      .then(data => {
+        if (data && data.ok) {
+          setBackendStatus('connected');
+        } else {
+          setBackendStatus('not reachable');
+        }
+      })
+      .catch(() => {
+        setBackendStatus('not reachable');
+      });
+  }, []);
 
   // Chronicle Handlers
   const handleCreateChronicle = (entryData: Omit<ChronicleEntry, 'id' | 'timestamp' | 'likesCount'>) => {
@@ -301,6 +332,8 @@ export default function App() {
                     setFeedbacks(prev => [newItem, ...prev]);
                 }}
                 onLogout={handleLogout}
+                userPreferences={userPreferences}
+                onUpdateUserPreferences={(newPrefs) => setUserPreferences(newPrefs)}
             />
         );
       case 'friends':
@@ -460,6 +493,18 @@ export default function App() {
              </div>
              
              <div className="flex items-center gap-3">
+                {/* Unobtrusive Backend Health Check Badge */}
+                <div 
+                  className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm"
+                  title="Vercel Serverless Function Health Status (/api/health)"
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${backendStatus === 'connected' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                  <span className="text-slate-400">backend:</span>
+                  <span className={backendStatus === 'connected' ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-amber-600 dark:text-amber-400 font-medium'}>
+                    {backendStatus}
+                  </span>
+                </div>
+
                 {user.role !== UserRole.Student && (
                     <Button onClick={() => setShowCreateModal(true)} className="hidden md:flex gap-2 bg-indigo-600 text-white hover:bg-indigo-700">
                        <Plus size={18} /> New Mission

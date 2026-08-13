@@ -1,4 +1,13 @@
 
+export interface UserPreferences {
+  theme?: 'light' | 'dark' | 'system';
+  language?: string;
+  preferredTranslationLanguage?: string;
+  autoDetectLanguage?: boolean;
+  soundVolume?: number;
+  notificationsEnabled?: boolean;
+}
+
 export type DeviceType = 'mobile' | 'tablet' | 'desktop';
 
 export type VerificationStatus = 'Unverified' | 'Pending' | 'Verified' | 'Rejected';

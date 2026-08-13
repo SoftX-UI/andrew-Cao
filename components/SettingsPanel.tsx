@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Moon, Sun, Bell, Shield, User, Globe, Volume2, Monitor, LogOut, Trash2, Palette, RotateCcw, Lock, Terminal, Smartphone, Tablet, Monitor as MonitorIcon, MessageSquareWarning, Flag, LifeBuoy, Check, Loader2, History, ChevronDown, ChevronUp, BookOpen, HelpCircle, Database, Copy, CheckCircle2 } from 'lucide-react';
 import { Card, Button, Badge, Input } from './Shared';
-import { MissionStatus, User as UserType, DeviceType, FeedbackItem } from '../types';
+import { MissionStatus, User as UserType, DeviceType, FeedbackItem, UserPreferences } from '../types';
 import { CURRENT_USER, ADMIN_USER, ISSUER_USER } from '../constants';
 import { UserGuideModal } from './UserGuideModal';
 import { isSupabaseConfigured } from '../services/supabaseClient';
@@ -20,6 +20,8 @@ interface SettingsPanelProps {
   onSubmitFeedback: (item: Omit<FeedbackItem, 'id' | 'timestamp' | 'status'>) => void;
   feedbacks: FeedbackItem[];
   onLogout: () => void;
+  userPreferences?: UserPreferences;
+  onUpdateUserPreferences?: (prefs: UserPreferences) => void;
 }
 
 const ToggleSwitch: React.FC<{ checked: boolean; onChange: () => void }> = ({ checked, onChange }) => (
@@ -35,6 +37,28 @@ const ToggleSwitch: React.FC<{ checked: boolean; onChange: () => void }> = ({ ch
   </button>
 );
 
+export interface LanguageOption {
+  code: string;
+  name: string;
+  nativeName: string;
+  flag: string;
+  region: string;
+  isRTL?: boolean;
+}
+
+export const SUPPORTED_LANGUAGES: LanguageOption[] = [
+  { code: 'en', name: 'English (US)', nativeName: 'English', flag: '🇺🇸', region: 'en-US' },
+  { code: 'es', name: 'Spanish', nativeName: 'Español', flag: '🇪🇸', region: 'es-ES' },
+  { code: 'fr', name: 'French', nativeName: 'Français', flag: '🇫🇷', region: 'fr-FR' },
+  { code: 'de', name: 'German', nativeName: 'Deutsch', flag: '🇩🇪', region: 'de-DE' },
+  { code: 'ja', name: 'Japanese', nativeName: '日本語', flag: '🇯🇵', region: 'ja-JP' },
+  { code: 'zh', name: 'Chinese (Simplified)', nativeName: '简体中文', flag: '🇨🇳', region: 'zh-CN' },
+  { code: 'pt', name: 'Portuguese', nativeName: 'Português', flag: '🇧🇷', region: 'pt-BR' },
+  { code: 'ko', name: 'Korean', nativeName: '한국어', flag: '🇰🇷', region: 'ko-KR' },
+  { code: 'ru', name: 'Russian', nativeName: 'Русский', flag: '🇷🇺', region: 'ru-RU' },
+  { code: 'ar', name: 'Arabic', nativeName: 'العربية', flag: '🇦🇪', region: 'ar-SA', isRTL: true }
+];
+
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
   isDarkMode, 
   setIsDarkMode, 
@@ -47,7 +71,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   setManualDeviceType,
   onSubmitFeedback,
   feedbacks,
-  onLogout
+  onLogout,
+  userPreferences,
+  onUpdateUserPreferences
 }) => {
   const [notifications, setNotifications] = useState({
     email: true,
@@ -63,6 +89,62 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   });
 
   const [soundVolume, setSoundVolume] = useState(80);
+
+  // Language & Regional Preferences State
+  const [selectedLanguage, setSelectedLanguage] = useState<string>(() => {
+    return userPreferences?.preferredTranslationLanguage || userPreferences?.language || localStorage.getItem('nexus_nova_language') || 'en';
+  });
+  const [autoDetectLanguage, setAutoDetectLanguage] = useState<boolean>(() => {
+    return userPreferences?.autoDetectLanguage ?? (localStorage.getItem('nexus_nova_auto_language') === 'true');
+  });
+  const [langSearch, setLangSearch] = useState('');
+  const [langSavedToast, setLangSavedToast] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    const prefLang = userPreferences?.preferredTranslationLanguage || userPreferences?.language || localStorage.getItem('nexus_nova_language');
+    if (prefLang && prefLang !== selectedLanguage) {
+      setSelectedLanguage(prefLang);
+    }
+  }, [userPreferences?.preferredTranslationLanguage, userPreferences?.language]);
+
+  const handleLanguageChange = (code: string) => {
+    setSelectedLanguage(code);
+    localStorage.setItem('nexus_nova_language', code);
+    if (onUpdateUserPreferences) {
+      onUpdateUserPreferences({
+        theme: isDarkMode ? 'dark' : 'light',
+        language: code,
+        preferredTranslationLanguage: code,
+        autoDetectLanguage,
+        soundVolume,
+        notificationsEnabled: notifications.guildAlerts,
+        ...userPreferences
+      });
+    }
+    const langObj = SUPPORTED_LANGUAGES.find(l => l.code === code);
+    if (langObj) {
+      setLangSavedToast(`Preferred Translation Language updated to ${langObj.name} (${langObj.nativeName})`);
+      setTimeout(() => setLangSavedToast(null), 3000);
+    }
+  };
+
+  const handleAutoDetectToggle = () => {
+    const nextVal = !autoDetectLanguage;
+    setAutoDetectLanguage(nextVal);
+    localStorage.setItem('nexus_nova_auto_language', String(nextVal));
+    if (nextVal) {
+      const browserLang = navigator.language.split('-')[0];
+      const matched = SUPPORTED_LANGUAGES.find(l => l.code === browserLang) || SUPPORTED_LANGUAGES[0];
+      handleLanguageChange(matched.code);
+    }
+  };
+
+  const currentLangObj = SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage) || SUPPORTED_LANGUAGES[0];
+  const filteredLanguages = SUPPORTED_LANGUAGES.filter(l => 
+    l.name.toLowerCase().includes(langSearch.toLowerCase()) || 
+    l.nativeName.toLowerCase().includes(langSearch.toLowerCase()) ||
+    l.code.toLowerCase().includes(langSearch.toLowerCase())
+  );
 
   // Feedback State
   const [feedbackType, setFeedbackType] = useState<'feedback' | 'report' | 'bug'>('feedback');
@@ -522,6 +604,150 @@ create policy "Allow anonymous insert on chat_messages" on public.chat_messages
                       </div>
                   </div>
               )}
+           </div>
+        </div>
+      </Card>
+
+      {/* Language & Regional Preferences Section */}
+      <Card className="p-0 overflow-hidden border-indigo-100 dark:border-indigo-900/40">
+        <div className="p-4 border-b border-slate-100 bg-slate-50/50 dark:bg-slate-900/50 dark:border-slate-800 flex justify-between items-center flex-wrap gap-2">
+           <h3 className="font-bold flex items-center gap-2 text-slate-800 dark:text-slate-200">
+             <Globe size={18} className="text-indigo-600 dark:text-indigo-400" /> Language & Regional Preferences
+           </h3>
+           <div className="flex items-center gap-2">
+              <Badge className="bg-indigo-50 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 font-mono">
+                <span>{currentLangObj.flag}</span>
+                <span>{currentLangObj.name}</span>
+              </Badge>
+           </div>
+        </div>
+
+        <div className="p-6 space-y-6">
+           {/* Toast Notification when saved */}
+           {langSavedToast && (
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 font-medium flex items-center justify-between animate-in fade-in slide-in-from-top-2">
+                <span className="flex items-center gap-2">
+                  <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400" />
+                  {langSavedToast}
+                </span>
+                <span className="text-[10px] uppercase font-mono tracking-wider opacity-75">Saved to Preferences</span>
+              </div>
+           )}
+
+           {/* Preferred Translation Language Dropdown */}
+           <div className="p-4 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/80 rounded-2xl space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                 <div>
+                    <label htmlFor="pref-trans-lang-select" className="font-bold text-sm text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                       <Globe size={16} className="text-indigo-600 dark:text-indigo-400" />
+                       Preferred Translation Language
+                    </label>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                       Target language used whenever you translate chat messages or direct messages (updates <code className="text-indigo-600 dark:text-indigo-300 font-mono text-[11px]">userPreferences.preferredTranslationLanguage</code>).
+                    </p>
+                 </div>
+                 <select
+                   id="pref-trans-lang-select"
+                   value={selectedLanguage}
+                   onChange={(e) => handleLanguageChange(e.target.value)}
+                   className="h-10 px-3 py-1.5 rounded-xl border border-indigo-300 dark:border-indigo-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-medium text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer min-w-[200px]"
+                 >
+                   {SUPPORTED_LANGUAGES.map((lang) => (
+                      <option key={lang.code} value={lang.code}>
+                         {lang.flag} {lang.name} ({lang.nativeName})
+                      </option>
+                   ))}
+                 </select>
+              </div>
+           </div>
+
+           {/* Auto-Detect Switch */}
+           <div className="flex items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+              <div>
+                 <p className="font-medium text-slate-800 dark:text-slate-200">Auto-Detect System Language</p>
+                 <p className="text-xs text-slate-500 dark:text-slate-400">Sync interface language with your browser's language setting ({navigator.language || 'en-US'}).</p>
+              </div>
+              <ToggleSwitch checked={autoDetectLanguage} onChange={handleAutoDetectToggle} />
+           </div>
+
+           {/* Search & Selection */}
+           <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                 <label className="text-xs font-bold text-slate-500 uppercase dark:text-slate-400 flex items-center gap-1">
+                   Select Display Language ({SUPPORTED_LANGUAGES.length} Available)
+                 </label>
+                 <Input 
+                   placeholder="Search languages..." 
+                   value={langSearch} 
+                   onChange={(e) => setLangSearch(e.target.value)}
+                   className="h-8 text-xs max-w-xs bg-slate-50 dark:bg-slate-900"
+                 />
+              </div>
+
+              {/* Language Options Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+                 {filteredLanguages.map((lang) => {
+                    const isSelected = selectedLanguage === lang.code;
+                    return (
+                      <button
+                        key={lang.code}
+                        type="button"
+                        onClick={() => handleLanguageChange(lang.code)}
+                        className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-2 ${
+                          isSelected 
+                            ? 'bg-indigo-50/90 border-indigo-500 text-indigo-900 dark:bg-indigo-950/60 dark:border-indigo-500 dark:text-indigo-200 shadow-sm' 
+                            : 'bg-slate-50/70 border-slate-200/80 text-slate-700 hover:bg-slate-100/80 dark:bg-slate-900/40 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800/80'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                           <span className="text-xl shrink-0">{lang.flag}</span>
+                           <div className="truncate">
+                              <p className="font-semibold text-xs leading-tight truncate">{lang.name}</p>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-serif italic truncate">{lang.nativeName}</p>
+                           </div>
+                        </div>
+                        {isSelected && (
+                           <CheckCircle2 size={16} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+                        )}
+                      </button>
+                    );
+                 })}
+              </div>
+           </div>
+
+           {/* Regional Preview Box */}
+           <div className="p-4 bg-slate-50 dark:bg-slate-900/80 rounded-xl border border-slate-200 dark:border-slate-800 text-xs space-y-2">
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+                 <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                   <Globe size={14} className="text-indigo-500" /> Regional Locale Formatting Preview ({currentLangObj.region}):
+                 </span>
+                 {currentLangObj.isRTL && (
+                   <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 text-[10px]">
+                     Right-To-Left (RTL) Layout
+                   </Badge>
+                 )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 text-slate-600 dark:text-slate-400">
+                 <div>
+                    <span className="block text-[10px] uppercase font-bold text-slate-400">Date Format:</span>
+                    <span className="font-mono text-slate-800 dark:text-slate-200">
+                      {new Date().toLocaleDateString(currentLangObj.region, { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </span>
+                 </div>
+                 <div>
+                    <span className="block text-[10px] uppercase font-bold text-slate-400">Currency Sample:</span>
+                    <span className="font-mono text-slate-800 dark:text-slate-200">
+                      {new Intl.NumberFormat(currentLangObj.region, { style: 'currency', currency: 'USD' }).format(1250)}
+                    </span>
+                 </div>
+                 <div>
+                    <span className="block text-[10px] uppercase font-bold text-slate-400">Time Sample:</span>
+                    <span className="font-mono text-slate-800 dark:text-slate-200">
+                      {new Date().toLocaleTimeString(currentLangObj.region, { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                 </div>
+              </div>
            </div>
         </div>
       </Card>
