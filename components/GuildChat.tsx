@@ -361,12 +361,6 @@ export const GuildChat: React.FC<GuildChatProps> = ({ cooldownDuration = 30, use
                         <ChevronDown size={14} className={`transition-transform ${showChannelMenu ? 'rotate-180' : ''}`} />
                     </button>
 
-                    {/* Supabase Connection Status Pill */}
-                    <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-black/20 text-white/90 border border-white/20 ml-2" title={isSupabaseConfigured ? "Supabase Live Database Connected" : "Local Database Mode (Add VITE_SUPABASE_URL in .env)"}>
-                      <Database size={10} className={isSupabaseConfigured ? "text-emerald-300" : "text-amber-300"} />
-                      <span>{isSupabaseConfigured ? "Supabase Live" : "Local Sync"}</span>
-                    </div>
-
                     {/* Channel Dropdown */}
                     {showChannelMenu && (
                         <div className="absolute top-full left-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden z-[60] text-slate-800 dark:text-slate-200 animate-in fade-in zoom-in-95 duration-200">

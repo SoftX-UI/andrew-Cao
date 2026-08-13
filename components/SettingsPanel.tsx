@@ -1,11 +1,10 @@
 
 import React, { useState } from 'react';
-import { Moon, Sun, Bell, Shield, User, Globe, Volume2, Monitor, LogOut, Trash2, Palette, RotateCcw, Lock, Terminal, Smartphone, Tablet, Monitor as MonitorIcon, MessageSquareWarning, Flag, LifeBuoy, Check, Loader2, History, ChevronDown, ChevronUp, BookOpen, HelpCircle, Database, Copy, CheckCircle2 } from 'lucide-react';
+import { Moon, Sun, Bell, Shield, User, Globe, Volume2, Monitor, LogOut, Trash2, Palette, RotateCcw, Lock, Terminal, Smartphone, Tablet, Monitor as MonitorIcon, MessageSquareWarning, Flag, LifeBuoy, Check, Loader2, History, ChevronDown, ChevronUp, BookOpen, HelpCircle, CheckCircle2 } from 'lucide-react';
 import { Card, Button, Badge, Input } from './Shared';
 import { MissionStatus, User as UserType, DeviceType, FeedbackItem, UserPreferences } from '../types';
 import { CURRENT_USER, ADMIN_USER, ISSUER_USER } from '../constants';
 import { UserGuideModal } from './UserGuideModal';
-import { isSupabaseConfigured } from '../services/supabaseClient';
 
 interface SettingsPanelProps {
   isDarkMode: boolean;
@@ -99,6 +98,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   });
   const [langSearch, setLangSearch] = useState('');
   const [langSavedToast, setLangSavedToast] = useState<string | null>(null);
+  const [showReloadPrompt, setShowReloadPrompt] = useState<boolean>(false);
+  const [pendingReloadLang, setPendingReloadLang] = useState<LanguageOption | null>(null);
 
   React.useEffect(() => {
     const prefLang = userPreferences?.preferredTranslationLanguage || userPreferences?.language || localStorage.getItem('nexus_nova_language');
@@ -123,8 +124,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
     const langObj = SUPPORTED_LANGUAGES.find(l => l.code === code);
     if (langObj) {
-      setLangSavedToast(`Preferred Translation Language updated to ${langObj.name} (${langObj.nativeName})`);
-      setTimeout(() => setLangSavedToast(null), 3000);
+      setLangSavedToast(`Language set to ${langObj.flag} ${langObj.name} (${langObj.nativeName})`);
+      setPendingReloadLang(langObj);
+      setShowReloadPrompt(true);
+      setTimeout(() => setLangSavedToast(null), 4000);
     }
   };
 
@@ -156,38 +159,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   // Guide State
   const [showUserGuide, setShowUserGuide] = useState(false);
-  const [copiedSql, setCopiedSql] = useState(false);
-
-  const supabaseSqlSchema = `-- Run this in your Supabase SQL Editor to initialize Chat & Storage tables:
-
-create table if not exists public.chat_messages (
-  id text primary key,
-  channel text not null,
-  sender text not null check (sender in ('user', 'agent')),
-  sender_name text,
-  text text not null,
-  recipient_id text,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
--- Enable Realtime subscriptions for chat
-alter publication supabase_realtime add table public.chat_messages;
-
--- Row Level Security (RLS) policies
-alter table public.chat_messages enable row level security;
-
-create policy "Allow anonymous select on chat_messages" on public.chat_messages
-  for select using (true);
-
-create policy "Allow anonymous insert on chat_messages" on public.chat_messages
-  for insert with check (true);
-`;
-
-  const copySqlToClipboard = () => {
-    navigator.clipboard.writeText(supabaseSqlSchema);
-    setCopiedSql(true);
-    setTimeout(() => setCopiedSql(false), 2000);
-  };
 
   const toggleNotif = (key: keyof typeof notifications) => {
     setNotifications(prev => ({ ...prev, [key]: !prev[key] }));
@@ -356,70 +327,6 @@ create policy "Allow anonymous insert on chat_messages" on public.chat_messages
                     <MonitorIcon size={14} /> Desktop
                  </button>
               </div>
-           </div>
-        </div>
-      </Card>
-
-      {/* Supabase Database & Realtime Communication Section */}
-      <Card className="p-0 overflow-hidden border-emerald-200 dark:border-emerald-900/50">
-        <div className="p-4 border-b border-emerald-100 bg-emerald-50/50 dark:bg-emerald-950/30 dark:border-emerald-900 flex justify-between items-center">
-           <h3 className="font-bold flex items-center gap-2 text-emerald-900 dark:text-emerald-200">
-             <Database size={18} className="text-emerald-600 dark:text-emerald-400" /> Supabase Database & Realtime Communication
-           </h3>
-           <Badge className={isSupabaseConfigured ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300"}>
-             {isSupabaseConfigured ? "Connected (Live)" : "Local Storage Mode"}
-           </Badge>
-        </div>
-        <div className="p-6 space-y-6">
-           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div>
-                 <p className="font-medium text-slate-800 dark:text-slate-200">Connection Status</p>
-                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                   {isSupabaseConfigured 
-                     ? "Realtime Supabase PostgreSQL client connected for chat, guild messages, and data storage." 
-                     : "Running in local persistent mode. To enable real-time cloud database storage, add your Supabase credentials in .env."}
-                 </p>
-              </div>
-              <div className="shrink-0 flex items-center gap-2">
-                 {isSupabaseConfigured ? (
-                   <span className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                     <CheckCircle2 size={16} /> Supabase Active
-                   </span>
-                 ) : (
-                   <span className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                     <Database size={16} /> Local Cache Mode
-                   </span>
-                 )}
-              </div>
-           </div>
-
-           <div className="bg-slate-50 dark:bg-slate-900/80 p-4 rounded-xl border border-slate-200 dark:border-slate-800 text-xs space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="font-bold text-slate-700 dark:text-slate-300">Environment Variables Required (.env.example):</span>
-              </div>
-              <p className="font-mono bg-white dark:bg-slate-950 p-2 rounded border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
-                VITE_SUPABASE_URL=https://your-project.supabase.co<br />
-                VITE_SUPABASE_ANON_KEY=your-anon-key
-              </p>
-           </div>
-
-           {/* Copyable SQL Setup Script */}
-           <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                 <label className="text-xs font-bold text-slate-500 uppercase dark:text-slate-400">Supabase SQL Table & Realtime Setup Script</label>
-                 <Button 
-                   onClick={copySqlToClipboard} 
-                   variant="ghost" 
-                   className="text-xs h-7 px-2 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950"
-                 >
-                    {copiedSql ? <><CheckCircle2 size={14} /> Copied SQL!</> : <><Copy size={14} /> Copy SQL Schema</>}
-                 </Button>
-              </div>
-              <textarea 
-                readOnly
-                value={supabaseSqlSchema}
-                className="w-full p-3 font-mono text-xs bg-slate-900 text-emerald-400 rounded-xl border border-slate-800 h-36 resize-none focus:outline-none"
-              />
            </div>
         </div>
       </Card>
@@ -623,8 +530,44 @@ create policy "Allow anonymous insert on chat_messages" on public.chat_messages
         </div>
 
         <div className="p-6 space-y-6">
+           {/* Language Change Reload Prompt Banner */}
+           {showReloadPrompt && pendingReloadLang && (
+              <div className="p-4 bg-gradient-to-r from-amber-500/15 via-indigo-500/15 to-cyan-500/15 dark:from-amber-950/60 dark:via-indigo-950/60 dark:to-cyan-950/60 border-2 border-indigo-500/80 rounded-2xl shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-3">
+                 <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                       <span className="text-xl">{pendingReloadLang.flag}</span>
+                       <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                          Display Language Set to {pendingReloadLang.name} ({pendingReloadLang.nativeName})
+                       </h4>
+                       <Badge className="bg-amber-500 text-slate-950 font-mono text-[10px] font-extrabold uppercase">
+                          Reload Required
+                       </Badge>
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-300">
+                       To display updated translations and regional formatting across all application tabs and dispatches, please reload or refresh the app.
+                    </p>
+                 </div>
+
+                 <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      onClick={() => window.location.reload()}
+                      className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs h-9 px-4 flex items-center gap-2 shadow-md"
+                    >
+                      <RotateCcw size={14} /> RELOAD APP NOW
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => setShowReloadPrompt(false)}
+                      className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 text-xs h-9 px-3"
+                    >
+                      Refresh Later
+                    </Button>
+                 </div>
+              </div>
+           )}
+
            {/* Toast Notification when saved */}
-           {langSavedToast && (
+           {langSavedToast && !showReloadPrompt && (
               <div className="p-3 bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 font-medium flex items-center justify-between animate-in fade-in slide-in-from-top-2">
                 <span className="flex items-center gap-2">
                   <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400" />
@@ -936,6 +879,34 @@ create policy "Allow anonymous insert on chat_messages" on public.chat_messages
       <div className="text-center text-xs text-slate-400 pt-8 pb-4">
          Nexus Nova Core App Version 2.5.0 • Build 20241029
       </div>
+
+      {/* Floating Language Reload Prompt Bar */}
+      {showReloadPrompt && pendingReloadLang && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md p-4 bg-slate-900/95 backdrop-blur-md border-2 border-indigo-500 text-slate-100 rounded-2xl shadow-2xl flex items-center justify-between gap-4 animate-in fade-in slide-in-from-bottom-5">
+           <div className="space-y-0.5">
+              <p className="font-bold text-xs flex items-center gap-1.5 text-indigo-300">
+                <Globe size={14} /> Language Updated: {pendingReloadLang.flag} {pendingReloadLang.name}
+              </p>
+              <p className="text-[11px] text-slate-400 font-mono">
+                Reload to apply new display language across all tabs?
+              </p>
+           </div>
+           <div className="flex items-center gap-1.5 shrink-0">
+              <Button
+                onClick={() => window.location.reload()}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs h-8 px-3 flex items-center gap-1.5 shadow"
+              >
+                <RotateCcw size={12} /> Reload App
+              </Button>
+              <button
+                onClick={() => setShowReloadPrompt(false)}
+                className="text-slate-400 hover:text-slate-200 text-xs px-2 py-1 font-mono"
+              >
+                ✕
+              </button>
+           </div>
+        </div>
+      )}
     </div>
   );
 };
