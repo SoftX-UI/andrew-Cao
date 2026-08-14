@@ -29,6 +29,17 @@ const LANGUAGE_CODE_MAP: Record<string, string> = {
   italian: 'it'
 };
 
+let genAIClient: GoogleGenAI | null = null;
+
+function getGenAIClient(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+  if (!apiKey) return null;
+  if (!genAIClient) {
+    genAIClient = new GoogleGenAI({ apiKey });
+  }
+  return genAIClient;
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
@@ -70,20 +81,20 @@ export default async function handler(req: any, res: any) {
   const targetLanguageName = LANGUAGE_NAME_MAP[cleanLang] || rawTarget;
   const targetCode = LANGUAGE_CODE_MAP[cleanLang] || cleanLang;
 
-  // 3. Try server-side secret API keys first
-  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || process.env.GOOGLE_TRANSLATE_API_KEY;
+  // 3. Primary Engine: Gemini API via GEMINI_API_KEY
+  const geminiApiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
 
-  if (apiKey) {
-    // 3a. Direct Gemini 2.5 Flash translation
+  if (geminiApiKey) {
+    // 3a. Direct Gemini 2.5 Flash REST API endpoint
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{
             parts: [{
-              text: `Translate the following text into ${targetLanguageName}. Return ONLY the translation, nothing else:\n\n"${cleanText}"`
+              text: `Translate the following text into ${targetLanguageName}. Return ONLY the translation, without quotes or additional commentary:\n\n"${cleanText}"`
             }]
           }]
         })
@@ -100,29 +111,29 @@ export default async function handler(req: any, res: any) {
         }
       }
     } catch (err) {
-      console.warn("[/api/translate] Gemini direct fetch error, trying GenAI SDK:", err);
+      console.warn("[/api/translate] Gemini direct API fetch error, trying GenAI SDK:", err);
     }
 
-    // 3b. GenAI SDK fallback
+    // 3b. Google GenAI SDK fallback with GEMINI_API_KEY
     try {
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = getGenAIClient() || new GoogleGenAI({ apiKey: geminiApiKey });
       const aiResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `Translate the following text into ${targetLanguageName}. Return ONLY the translation, nothing else:\n\n"${cleanText}"`
+        contents: `Translate the following text into ${targetLanguageName}. Return ONLY the translation, without quotes or additional commentary:\n\n"${cleanText}"`
       });
 
       if (aiResponse && aiResponse.text) {
         return res.status(200).json({
           translatedText: aiResponse.text.trim().replace(/^["']|["']$/g, '').trim(),
-          serviceUsed: 'genai-sdk'
+          serviceUsed: 'gemini-sdk'
         });
       }
     } catch (err) {
-      console.warn("[/api/translate] GenAI SDK error:", err);
+      console.warn("[/api/translate] GenAI SDK translation error:", err);
     }
   }
 
-  // 4. Server-side Google Translate Web Endpoint fallback (high accuracy, no key required)
+  // 4. Fallback: Google Translate Web API (ensures translation succeeds even if Gemini quota temporarily spikes)
   try {
     const googleWebUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(targetCode)}&dt=t&q=${encodeURIComponent(cleanText)}`;
     const webResponse = await fetch(googleWebUrl);
@@ -133,7 +144,7 @@ export default async function handler(req: any, res: any) {
         if (segments && segments.trim()) {
           return res.status(200).json({
             translatedText: segments.trim(),
-            serviceUsed: 'google-web'
+            serviceUsed: 'google-web-fallback'
           });
         }
       }
