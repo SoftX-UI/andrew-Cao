@@ -650,7 +650,7 @@ export default function App() {
        )}
 
        {/* Chat Component */}
-       <GuildChat cooldownDuration={chatCooldown} user={user} />
+       <GuildChat cooldownDuration={chatCooldown} user={user} userPreferences={userPreferences} />
        
        {/* Modals */}
        {selectedMissionId && (

@@ -113,13 +113,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     localStorage.setItem('nexus_nova_language', code);
     if (onUpdateUserPreferences) {
       onUpdateUserPreferences({
+        ...userPreferences,
         theme: isDarkMode ? 'dark' : 'light',
         language: code,
         preferredTranslationLanguage: code,
         autoDetectLanguage,
         soundVolume,
-        notificationsEnabled: notifications.guildAlerts,
-        ...userPreferences
+        notificationsEnabled: notifications.guildAlerts
       });
     }
     const langObj = SUPPORTED_LANGUAGES.find(l => l.code === code);

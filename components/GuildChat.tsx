@@ -1,8 +1,9 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquare, X, Send, Bot, User as UserIcon, Loader2, Globe, MapPin, Filter, ChevronDown, Users, Coins, Clock, Database } from 'lucide-react';
-import { ChatMessage, User } from '../types';
+import { ChatMessage, User, UserPreferences } from '../types';
 import { sendMessageToGuild } from '../services/geminiService';
+import { translateText, getLanguageName } from '../services/translationService';
 import { Button, Input, Card } from './Shared';
 import { isSupabaseConfigured } from '../services/supabaseClient';
 import { 
@@ -19,6 +20,7 @@ type FilterType = 'all' | 'user' | 'agent';
 interface GuildChatProps {
     cooldownDuration?: number; // In seconds
     user?: User | null;
+    userPreferences?: UserPreferences;
 }
 
 const MOCK_NAMES = [
@@ -45,12 +47,17 @@ const MOCK_TRADE_REPLIES = [
   "Auction ending soon for the Ancient Scroll!"
 ];
 
-export const GuildChat: React.FC<GuildChatProps> = ({ cooldownDuration = 30, user }) => {
+export const GuildChat: React.FC<GuildChatProps> = ({ cooldownDuration = 30, user, userPreferences }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeChannel, setActiveChannel] = useState<ChatChannel>('reception');
   const [senderFilter, setSenderFilter] = useState<FilterType>('all');
   const [showChannelMenu, setShowChannelMenu] = useState(false);
   
+  // Translation State
+  const [translatedMessages, setTranslatedMessages] = useState<Record<string, { text: string; targetLang: string }>>({});
+  const [translatingIds, setTranslatingIds] = useState<Record<string, boolean>>({});
+  const [showOriginalState, setShowOriginalState] = useState<Record<string, boolean>>({});
+
   // Cooldown State
   const [lastSentTime, setLastSentTime] = useState(0);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
@@ -311,6 +318,47 @@ export const GuildChat: React.FC<GuildChatProps> = ({ cooldownDuration = 30, use
     else setSenderFilter('all');
   };
 
+  /**
+   * Helper function that translates a message using the Gemini API
+   * and toggles between the translated text and the original text.
+   */
+  const translateMessage = async (msgId: string, originalContent: string) => {
+    if (!originalContent || !originalContent.trim()) return;
+
+    const targetLang = userPreferences?.preferredTranslationLanguage || userPreferences?.language || localStorage.getItem('nexus_nova_language') || 'es';
+    const targetLangName = getLanguageName(targetLang);
+
+    // If already translated to the CURRENT selected language, toggle between translation and original
+    if (translatedMessages[msgId] && translatedMessages[msgId].targetLang === targetLangName) {
+      if (!showOriginalState[msgId]) {
+        setShowOriginalState(prev => ({ ...prev, [msgId]: true }));
+        return;
+      } else {
+        setShowOriginalState(prev => ({ ...prev, [msgId]: false }));
+        return;
+      }
+    }
+
+    // Otherwise (or if language preference changed), perform translation
+    setTranslatingIds(prev => ({ ...prev, [msgId]: true }));
+
+    try {
+      const translated = await translateText(originalContent, targetLang);
+      setTranslatedMessages(prev => ({
+        ...prev,
+        [msgId]: {
+          text: translated || originalContent,
+          targetLang: targetLangName
+        }
+      }));
+      setShowOriginalState(prev => ({ ...prev, [msgId]: false }));
+    } catch (err) {
+      console.error("Translation error:", err);
+    } finally {
+      setTranslatingIds(prev => ({ ...prev, [msgId]: false }));
+    }
+  };
+
   const getFilteredMessages = () => {
     const msgs = channels[activeChannel];
     if (senderFilter === 'all') return msgs;
@@ -443,8 +491,72 @@ export const GuildChat: React.FC<GuildChatProps> = ({ cooldownDuration = 30, use
                             ? 'bg-guild-600 text-white rounded-tr-none' 
                             : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none dark:bg-slate-900 dark:border-slate-700 dark:text-slate-200'
                         }`}>
-                            {msg.text || (msg.isTyping && <Loader2 className="animate-spin" size={16} />)}
+                            {msg.isTyping ? (
+                              <Loader2 className="animate-spin" size={16} />
+                            ) : translatedMessages[msg.id] && !showOriginalState[msg.id] ? (
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between gap-2 border-b border-indigo-200/50 dark:border-indigo-800/60 pb-1 text-[11px] font-mono">
+                                  <span className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 font-bold uppercase tracking-wider text-[10px]">
+                                    <span className="font-extrabold font-serif px-1 rounded bg-indigo-600 text-white text-[9px] leading-tight">A</span>
+                                    {translatedMessages[msg.id].targetLang}
+                                  </span>
+                                  <button
+                                    onClick={() => translateMessage(msg.id, msg.text)}
+                                    className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 underline font-sans"
+                                  >
+                                    Original
+                                  </button>
+                                </div>
+                                <p className="leading-relaxed">{translatedMessages[msg.id].text}</p>
+                              </div>
+                            ) : (
+                              <div>
+                                <p className="leading-relaxed">{msg.text}</p>
+                                {translatedMessages[msg.id] && showOriginalState[msg.id] && (
+                                  <div className="mt-1 pt-1 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between text-[10px] text-slate-400">
+                                    <span className="italic">Showing original</span>
+                                    <button
+                                      onClick={() => translateMessage(msg.id, msg.text)}
+                                      className="text-indigo-500 hover:text-indigo-400 font-medium underline"
+                                    >
+                                      Show Translation
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                         </div>
+
+                        {/* Translation Action Button */}
+                        {!msg.isTyping && msg.text && (
+                          <div className={`mt-1 flex items-center gap-1.5 ${msg.sender === 'user' ? 'justify-end mr-1' : 'ml-1'}`}>
+                            <button
+                              onClick={() => translateMessage(msg.id, msg.text)}
+                              disabled={translatingIds[msg.id]}
+                              className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors py-0.5"
+                              title={
+                                translatedMessages[msg.id] && !showOriginalState[msg.id]
+                                  ? "Show original text"
+                                  : "Translate message"
+                              }
+                            >
+                              {translatingIds[msg.id] ? (
+                                <Loader2 size={12} className="animate-spin text-indigo-500" />
+                              ) : (
+                                <span className="font-extrabold font-serif px-1 py-0.2 rounded bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-700/50 text-[10px] leading-tight">
+                                  A
+                                </span>
+                              )}
+                              <span className="text-[10px] font-mono">
+                                {translatingIds[msg.id]
+                                  ? 'Translating...'
+                                  : translatedMessages[msg.id] && !showOriginalState[msg.id]
+                                  ? 'Original'
+                                  : 'Translate'}
+                              </span>
+                            </button>
+                          </div>
+                        )}
                     </div>
                 </div>
                 ))
