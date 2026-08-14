@@ -1,3 +1,4 @@
+import translate from '@iamtraction/google-translate';
 import { GoogleGenAI } from "@google/genai";
 import { checkRateLimit, validatePayloadSize } from "./_rateLimiter";
 
@@ -12,7 +13,14 @@ const LANGUAGE_NAME_MAP: Record<string, string> = {
   ko: 'Korean',
   ru: 'Russian',
   ar: 'Arabic',
-  it: 'Italian'
+  it: 'Italian',
+  nl: 'Dutch',
+  hi: 'Hindi',
+  id: 'Indonesian',
+  tr: 'Turkish',
+  vi: 'Vietnamese',
+  pl: 'Polish',
+  uk: 'Ukrainian'
 };
 
 const LANGUAGE_CODE_MAP: Record<string, string> = {
@@ -22,11 +30,19 @@ const LANGUAGE_CODE_MAP: Record<string, string> = {
   german: 'de',
   japanese: 'ja',
   chinese: 'zh',
+  'chinese (simplified)': 'zh',
   portuguese: 'pt',
   korean: 'ko',
   russian: 'ru',
   arabic: 'ar',
-  italian: 'it'
+  italian: 'it',
+  dutch: 'nl',
+  hindi: 'hi',
+  indonesian: 'id',
+  turkish: 'tr',
+  vietnamese: 'vi',
+  polish: 'pl',
+  ukrainian: 'uk'
 };
 
 let genAIClient: GoogleGenAI | null = null;
@@ -64,7 +80,7 @@ export default async function handler(req: any, res: any) {
     });
   }
 
-  const { text, targetLanguage } = req.body || {};
+  const { text, targetLanguage, from = 'auto' } = req.body || {};
 
   if (!text || typeof text !== 'string') {
     return res.status(400).json({ error: 'Missing or invalid "text" field' });
@@ -73,48 +89,63 @@ export default async function handler(req: any, res: any) {
   // Cap input text length to 4000 characters
   const cleanText = text.slice(0, 4000).trim();
   if (!cleanText) {
-    return res.status(200).json({ translatedText: '' });
+    return res.status(200).json({ 
+      translatedText: '',
+      text: '',
+      from: { language: { iso: 'auto' } }
+    });
   }
 
-  const rawTarget = String(targetLanguage || 'Spanish').trim();
+  const rawTarget = String(targetLanguage || 'es').trim();
   const cleanLang = rawTarget.toLowerCase().split('-')[0];
+  const targetCode = LANGUAGE_CODE_MAP[cleanLang] || cleanLang || 'es';
   const targetLanguageName = LANGUAGE_NAME_MAP[cleanLang] || rawTarget;
-  const targetCode = LANGUAGE_CODE_MAP[cleanLang] || cleanLang;
 
-  // 3. Primary Engine: Gemini API via GEMINI_API_KEY
-  const geminiApiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+  // 3. Primary Engine: Google Translate API (matheuss/google-translate-api protocol)
+  try {
+    const result = await translate(cleanText, {
+      from: from || 'auto',
+      to: targetCode
+    });
 
-  if (geminiApiKey) {
-    // 3a. Direct Gemini 2.5 Flash REST API endpoint
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: `Translate the following text into ${targetLanguageName}. Return ONLY the translation, without quotes or additional commentary:\n\n"${cleanText}"`
-            }]
-          }]
-        })
+    if (result && result.text && result.text.trim()) {
+      return res.status(200).json({
+        translatedText: result.text.trim(),
+        text: result.text.trim(),
+        from: result.from || { language: { iso: 'auto' } },
+        serviceUsed: 'google-translate-api'
       });
+    }
+  } catch (translateErr) {
+    console.warn("[/api/translate] Google Translate API error, attempting direct Google Translate endpoint:", translateErr);
+  }
 
-      if (response.ok) {
-        const data = await response.json();
-        const translated = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        if (translated) {
+  // 4. Secondary Engine: Direct Google Translate endpoint (gtx)
+  try {
+    const googleWebUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(from)}&tl=${encodeURIComponent(targetCode)}&dt=t&q=${encodeURIComponent(cleanText)}`;
+    const webResponse = await fetch(googleWebUrl);
+    if (webResponse.ok) {
+      const data = await webResponse.json();
+      if (data && Array.isArray(data[0])) {
+        const segments = data[0].map((seg: any) => seg[0]).filter(Boolean).join('');
+        const detectedIso = data[2] || from;
+        if (segments && segments.trim()) {
           return res.status(200).json({
-            translatedText: translated.replace(/^["']|["']$/g, '').trim(),
-            serviceUsed: 'gemini-api'
+            translatedText: segments.trim(),
+            text: segments.trim(),
+            from: { language: { iso: detectedIso } },
+            serviceUsed: 'google-translate-direct'
           });
         }
       }
-    } catch (err) {
-      console.warn("[/api/translate] Gemini direct API fetch error, trying GenAI SDK:", err);
     }
+  } catch (err) {
+    console.warn("[/api/translate] Google Translate direct fetch error:", err);
+  }
 
-    // 3b. Google GenAI SDK fallback with GEMINI_API_KEY
+  // 5. Fallback: Gemini AI Translation Engine (if GEMINI_API_KEY is configured)
+  const geminiApiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+  if (geminiApiKey) {
     try {
       const ai = getGenAIClient() || new GoogleGenAI({ apiKey: geminiApiKey });
       const aiResponse = await ai.models.generateContent({
@@ -125,37 +156,21 @@ export default async function handler(req: any, res: any) {
       if (aiResponse && aiResponse.text) {
         return res.status(200).json({
           translatedText: aiResponse.text.trim().replace(/^["']|["']$/g, '').trim(),
-          serviceUsed: 'gemini-sdk'
+          text: aiResponse.text.trim().replace(/^["']|["']$/g, '').trim(),
+          from: { language: { iso: 'auto' } },
+          serviceUsed: 'gemini-fallback'
         });
       }
     } catch (err) {
-      console.warn("[/api/translate] GenAI SDK translation error:", err);
+      console.warn("[/api/translate] GenAI SDK translation fallback error:", err);
     }
   }
 
-  // 4. Fallback: Google Translate Web API (ensures translation succeeds even if Gemini quota temporarily spikes)
-  try {
-    const googleWebUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(targetCode)}&dt=t&q=${encodeURIComponent(cleanText)}`;
-    const webResponse = await fetch(googleWebUrl);
-    if (webResponse.ok) {
-      const data = await webResponse.json();
-      if (data && Array.isArray(data[0])) {
-        const segments = data[0].map((seg: any) => seg[0]).filter(Boolean).join('');
-        if (segments && segments.trim()) {
-          return res.status(200).json({
-            translatedText: segments.trim(),
-            serviceUsed: 'google-web-fallback'
-          });
-        }
-      }
-    }
-  } catch (err) {
-    console.warn("[/api/translate] Web translation fallback error:", err);
-  }
-
-  // 5. Default safe return
+  // 6. Passthrough return
   return res.status(200).json({
     translatedText: cleanText,
+    text: cleanText,
+    from: { language: { iso: 'auto' } },
     serviceUsed: 'passthrough'
   });
 }

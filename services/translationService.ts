@@ -1,9 +1,31 @@
 /**
  * Client-side Translation Service Proxy
  *
- * All translations are routed securely through the /api/translate serverless endpoint.
- * No API keys are held or accessed in the browser bundle.
+ * Implements the google-translate-api interface (https://github.com/matheuss/google-translate-api)
+ * All translations are routed securely through the /api/translate endpoint with fallbacks.
  */
+
+export interface GoogleTranslateOptions {
+  to?: string;
+  from?: string;
+  raw?: boolean;
+}
+
+export interface GoogleTranslateResponse {
+  text: string;
+  from: {
+    language: {
+      didYouMean?: boolean;
+      iso: string;
+    };
+    text?: {
+      autoCorrected?: boolean;
+      value?: string;
+      didYouMean?: boolean;
+    };
+  };
+  raw?: any;
+}
 
 export const LANGUAGE_NAME_MAP: Record<string, string> = {
   en: 'English',
@@ -16,7 +38,14 @@ export const LANGUAGE_NAME_MAP: Record<string, string> = {
   ko: 'Korean',
   ru: 'Russian',
   ar: 'Arabic',
-  it: 'Italian'
+  it: 'Italian',
+  nl: 'Dutch',
+  hi: 'Hindi',
+  id: 'Indonesian',
+  tr: 'Turkish',
+  vi: 'Vietnamese',
+  pl: 'Polish',
+  uk: 'Ukrainian'
 };
 
 export const LANGUAGE_CODE_MAP: Record<string, string> = {
@@ -52,7 +81,21 @@ export const LANGUAGE_CODE_MAP: Record<string, string> = {
   ar: 'ar',
   italian: 'it',
   italiano: 'it',
-  it: 'it'
+  it: 'it',
+  dutch: 'nl',
+  nl: 'nl',
+  hindi: 'hi',
+  hi: 'hi',
+  indonesian: 'id',
+  id: 'id',
+  turkish: 'tr',
+  tr: 'tr',
+  vietnamese: 'vi',
+  vi: 'vi',
+  polish: 'pl',
+  pl: 'pl',
+  ukrainian: 'uk',
+  uk: 'uk'
 };
 
 export function getLanguageName(codeOrName: string): string {
@@ -98,7 +141,7 @@ const LOCAL_FALLBACKS: Record<string, Record<string, string>> = {
     "Just cashed in my rewards. Drinks on me!": "Je viens d'encaisser mes récompenses. Tournée générale !",
     "The taxes this month are ridiculous.": "Les taxes ce mois-ci sont ridicules.",
     "Be careful near the West Gate, goblins are active.": "Faites attention près de la Porte Ouest, les gobelins sont actifs.",
-    "LFG Healer/Support. Serious inquiries only.": "Cherche Soigneur/Soutien. Demandes sérieuses uniquement.",
+    "LFG Healer/Support. Serious inquiries only.": "Cherche Soigneur/Soutien. Demandes sérieuses únicamente.",
     "Can someone verify my proof of completion?": "Quelqu'un peut-il vérifier ma preuve d'achèvement ?"
   },
   ja: {
@@ -115,7 +158,102 @@ const LOCAL_FALLBACKS: Record<string, Record<string, string>> = {
 };
 
 /**
- * Translates text via the secure serverless backend endpoint (/api/translate).
+ * Standard google-translate-api interface:
+ *
+ * translate('Hello world', { to: 'es', from: 'en' })
+ *   .then(res => console.log(res.text, res.from.language.iso));
+ */
+export async function translate(
+  text: string,
+  options: GoogleTranslateOptions = { to: 'en', from: 'auto' }
+): Promise<GoogleTranslateResponse> {
+  if (!text || !text.trim()) {
+    return {
+      text: '',
+      from: { language: { iso: options.from || 'auto' } }
+    };
+  }
+
+  const targetLang = options.to || 'en';
+  const targetCode = getLanguageCode(targetLang);
+  const fromLang = options.from || 'auto';
+
+  // 1. Try secure /api/translate serverless endpoint first
+  try {
+    const response = await fetch('/api/translate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text,
+        targetLanguage: targetCode,
+        from: fromLang
+      })
+    });
+
+    if (response.ok) {
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await response.json();
+        const resText = (data?.text || data?.translatedText || '').trim();
+        if (resText) {
+          return {
+            text: resText,
+            from: data.from || { language: { iso: fromLang } }
+          };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[translate] /api/translate route not available, using direct Google Translate engine:", err);
+  }
+
+  // 2. Direct Google Translate Web API (CORS enabled client=gtx)
+  try {
+    const googleWebUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(fromLang)}&tl=${encodeURIComponent(targetCode)}&dt=t&q=${encodeURIComponent(text.trim())}`;
+    const webResponse = await fetch(googleWebUrl);
+    
+    if (webResponse.ok) {
+      const data = await webResponse.json();
+      if (data && Array.isArray(data[0])) {
+        // Collect all translated sentence fragments
+        const fullTranslation = data[0]
+          .map((seg: any) => (Array.isArray(seg) && seg[0] ? seg[0] : ''))
+          .filter(Boolean)
+          .join('');
+
+        const detectedIso = data[2] || fromLang;
+
+        if (fullTranslation && fullTranslation.trim()) {
+          return {
+            text: fullTranslation.trim(),
+            from: { language: { iso: detectedIso } }
+          };
+        }
+      }
+    }
+  } catch (directErr) {
+    console.warn("[translate] Direct Google Translate fetch error:", directErr);
+  }
+
+  // 3. Fallback to Local Phrase Dictionary
+  if (LOCAL_FALLBACKS[targetCode] && LOCAL_FALLBACKS[targetCode][text]) {
+    return {
+      text: LOCAL_FALLBACKS[targetCode][text],
+      from: { language: { iso: 'auto' } }
+    };
+  }
+
+  // 4. Safe Passthrough
+  return {
+    text,
+    from: { language: { iso: fromLang } }
+  };
+}
+
+/**
+ * Translates text via the google-translate-api protocol with string return.
  *
  * @param textToTranslate The raw text content to translate
  * @param targetLanguage Target language name or code (e.g. 'German', 'Spanish', 'es', 'de')
@@ -128,37 +266,9 @@ export async function translateText(
     return '';
   }
 
-  const targetLanguageName = getLanguageName(targetLanguage);
   const targetCode = getLanguageCode(targetLanguage);
-
-  // 1. Call secure /api/translate route
-  try {
-    const response = await fetch('/api/translate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        text: textToTranslate,
-        targetLanguage: targetLanguageName
-      })
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data?.translatedText && data.translatedText.trim()) {
-        return data.translatedText.trim();
-      }
-    }
-  } catch (err) {
-    console.warn("Client translate fetch error, checking local dictionary:", err);
-  }
-
-  // 2. Local Phrase Dictionary Fallback
-  if (LOCAL_FALLBACKS[targetCode] && LOCAL_FALLBACKS[targetCode][textToTranslate]) {
-    return LOCAL_FALLBACKS[targetCode][textToTranslate];
-  }
-
-  // 3. Passthrough fallback
-  return textToTranslate;
+  const res = await translate(textToTranslate, { to: targetCode, from: 'auto' });
+  return res.text;
 }
+
+export default translate;

@@ -54,9 +54,26 @@ export const GuildChat: React.FC<GuildChatProps> = ({ cooldownDuration = 30, use
   const [showChannelMenu, setShowChannelMenu] = useState(false);
   
   // Translation State
-  const [translatedMessages, setTranslatedMessages] = useState<Record<string, { text: string; targetLang: string }>>({});
+  const [targetLangCode, setTargetLangCode] = useState<string>(() => {
+    return userPreferences?.preferredTranslationLanguage || localStorage.getItem('nexus_nova_chat_lang') || 'es';
+  });
+  const [showLangMenu, setShowLangMenu] = useState(false);
+  const [translatedMessages, setTranslatedMessages] = useState<Record<string, { text: string; targetLang: string; fromLang?: string }>>({});
   const [translatingIds, setTranslatingIds] = useState<Record<string, boolean>>({});
   const [showOriginalState, setShowOriginalState] = useState<Record<string, boolean>>({});
+
+  const POPULAR_LANGS = [
+    { code: 'es', label: 'Spanish (ES)', flag: '🇪🇸' },
+    { code: 'fr', label: 'French (FR)', flag: '🇫🇷' },
+    { code: 'de', label: 'German (DE)', flag: '🇩🇪' },
+    { code: 'ja', label: 'Japanese (JA)', flag: '🇯🇵' },
+    { code: 'zh', label: 'Chinese (ZH)', flag: '🇨🇳' },
+    { code: 'ko', label: 'Korean (KO)', flag: '🇰🇷' },
+    { code: 'ru', label: 'Russian (RU)', flag: '🇷🇺' },
+    { code: 'id', label: 'Indonesian (ID)', flag: '🇮🇩' },
+    { code: 'it', label: 'Italian (IT)', flag: '🇮🇹' },
+    { code: 'en', label: 'English (EN)', flag: '🇺🇸' },
+  ];
 
   // Cooldown State
   const [lastSentTime, setLastSentTime] = useState(0);
@@ -319,31 +336,26 @@ export const GuildChat: React.FC<GuildChatProps> = ({ cooldownDuration = 30, use
   };
 
   /**
-   * Helper function that translates a message using the Gemini API
+   * Helper function that translates a message using Google Translate API
    * and toggles between the translated text and the original text.
    */
-  const translateMessage = async (msgId: string, originalContent: string) => {
+  const translateMessage = async (msgId: string, originalContent: string, customTarget?: string) => {
     if (!originalContent || !originalContent.trim()) return;
 
-    const targetLang = userPreferences?.preferredTranslationLanguage || userPreferences?.language || localStorage.getItem('nexus_nova_language') || 'es';
-    const targetLangName = getLanguageName(targetLang);
+    const chosenCode = customTarget || targetLangCode || 'es';
+    const targetLangName = getLanguageName(chosenCode);
 
     // If already translated to the CURRENT selected language, toggle between translation and original
     if (translatedMessages[msgId] && translatedMessages[msgId].targetLang === targetLangName) {
-      if (!showOriginalState[msgId]) {
-        setShowOriginalState(prev => ({ ...prev, [msgId]: true }));
-        return;
-      } else {
-        setShowOriginalState(prev => ({ ...prev, [msgId]: false }));
-        return;
-      }
+      setShowOriginalState(prev => ({ ...prev, [msgId]: !prev[msgId] }));
+      return;
     }
 
-    // Otherwise (or if language preference changed), perform translation
+    // Otherwise perform translation
     setTranslatingIds(prev => ({ ...prev, [msgId]: true }));
 
     try {
-      const translated = await translateText(originalContent, targetLang);
+      const translated = await translateText(originalContent, chosenCode);
       setTranslatedMessages(prev => ({
         ...prev,
         [msgId]: {
@@ -357,6 +369,12 @@ export const GuildChat: React.FC<GuildChatProps> = ({ cooldownDuration = 30, use
     } finally {
       setTranslatingIds(prev => ({ ...prev, [msgId]: false }));
     }
+  };
+
+  const handleSelectTargetLang = (code: string) => {
+    setTargetLangCode(code);
+    localStorage.setItem('nexus_nova_chat_lang', code);
+    setShowLangMenu(false);
   };
 
   const getFilteredMessages = () => {
@@ -436,7 +454,41 @@ export const GuildChat: React.FC<GuildChatProps> = ({ cooldownDuration = 30, use
                     )}
                 </div>
                 
-                <div className="flex gap-1">
+                <div className="flex items-center gap-1">
+                    {/* Translation Target Selector */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowLangMenu(!showLangMenu)}
+                        className="p-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-medium bg-white/10 hover:bg-white/20 text-white"
+                        title="Change translation language"
+                      >
+                        <Globe size={13} />
+                        <span className="uppercase text-[11px] font-bold">{targetLangCode}</span>
+                        <ChevronDown size={11} className={`transition-transform ${showLangMenu ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {showLangMenu && (
+                        <div className="absolute top-full right-0 mt-2 w-44 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden z-[70] text-slate-800 dark:text-slate-200 max-h-56 overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
+                          <div className="px-3 py-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+                            Translate To
+                          </div>
+                          {POPULAR_LANGS.map((lang) => (
+                            <button
+                              key={lang.code}
+                              onClick={() => handleSelectTargetLang(lang.code)}
+                              className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700/50 ${targetLangCode === lang.code ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 font-semibold' : ''}`}
+                            >
+                              <span className="flex items-center gap-2">
+                                <span>{lang.flag}</span>
+                                <span>{lang.label}</span>
+                              </span>
+                              {targetLangCode === lang.code && <span className="text-indigo-600 dark:text-indigo-400 font-bold">✓</span>}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
                     <button 
                         onClick={cycleFilter}
                         className={`p-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-medium border ${
